@@ -14,9 +14,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $run=gh api repos/clearframeworks/cfh-pdf/actions/runs/42404795900 | ConvertFrom-Json
-          if($run.head_sha -ne '900031ce251aa8237a7becbdd51baf72600bb457' -or $run.conclusion -ne 'success'){throw 'Candidate identity mismatch'}
-          gh run download 42404795900 --repo clearframeworks/cfh-pdf -n cfh-pdf-engine-and-notices -D "$env:RUNNER_TEMP\stage"
+          $run=gh api repos/clearframeworks/cfh-pdf/actions/runs/42405910426 | ConvertFrom-Json
+          if($run.head_sha -ne 'e1bc0d31eb2ef884684b0457068250520e568ac3' -or $run.conclusion -ne 'success'){throw 'Candidate identity mismatch'}
+          gh run download 42405910426 --repo clearframeworks/cfh-pdf -n cfh-pdf-engine-and-notices -D "$env:RUNNER_TEMP\stage"
           if($LASTEXITCODE -ne 0){throw 'Artifact download failed'}
       - name: Create test installer
         shell: pwsh
