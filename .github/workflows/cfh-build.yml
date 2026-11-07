@@ -95,6 +95,7 @@ jobs:
           export LODE_HOME="$(/usr/bin/cygpath -u "$RUNNER_TEMP")/lode"
           export PATH="/usr/bin:$LODE_HOME/opt/bin:$PATH"
           cd "$(/usr/bin/cygpath -u "$RUNNER_TEMP")/office-src"
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$PWD"
           printf 'Building Office source: '; git rev-parse HEAD
           bash cfh-build/configure.sh
           make -j2
