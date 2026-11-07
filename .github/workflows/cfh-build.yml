@@ -90,6 +90,8 @@ jobs:
         shell: pwsh
         timeout-minutes: 240
         run: |
+          if(-not $env:JAVA_HOME_17_X64 -or -not (Test-Path "$env:JAVA_HOME_17_X64\bin\javac.exe")){throw '64-bit JDK 17 not found'}
+          $env:JAVA_HOME=$env:JAVA_HOME_17_X64
           $script=@'
           set -euo pipefail
           export LODE_HOME="$(/usr/bin/cygpath -u "$RUNNER_TEMP")/lode"
@@ -97,7 +99,7 @@ jobs:
           cd "$(/usr/bin/cygpath -u "$RUNNER_TEMP")/office-src"
           export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$PWD"
           printf 'Building Office source: '; git rev-parse HEAD
-          bash cfh-build/configure.sh --with-visual-studio=2026
+          bash cfh-build/configure.sh --with-visual-studio=2026 --with-jdk-home="$(/usr/bin/cygpath -u "$JAVA_HOME")"
           make -j2
           '@
           [IO.File]::WriteAllText("$env:RUNNER_TEMP\cfh-office-build.sh", $script.Replace("`r`n", "`n"), [Text.Encoding]::ASCII)
