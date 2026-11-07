@@ -4,7 +4,7 @@ on:
 permissions: {}
 jobs:
   probe:
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 330
     steps:
       - name: Inspect Windows build prerequisites
@@ -99,7 +99,7 @@ jobs:
           cd "$(/usr/bin/cygpath -u "$RUNNER_TEMP")/office-src"
           export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$PWD"
           printf 'Building Office source: '; git rev-parse HEAD
-          bash cfh-build/configure.sh --with-visual-studio=2026 --with-jdk-home="$(/usr/bin/cygpath -u "$JAVA_HOME")"
+          bash cfh-build/configure.sh --with-visual-studio=2022 --with-jdk-home="$(/usr/bin/cygpath -u "$JAVA_HOME")"
           '@
           [IO.File]::WriteAllText("$env:RUNNER_TEMP\cfh-office-configure.sh", $script.Replace("`r`n", "`n"), [Text.Encoding]::ASCII)
           & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" "$env:RUNNER_TEMP\cfh-office-configure.sh"
