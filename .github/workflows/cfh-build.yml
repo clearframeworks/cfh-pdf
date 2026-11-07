@@ -66,6 +66,8 @@ jobs:
           $dir="$env:RUNNER_TEMP\installed"
           $p=Start-Process "$env:RUNNER_TEMP\installer\CFH-PDF-Setup.exe" -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir") -Wait -PassThru
           if($p.ExitCode -ne 0){throw 'Installer failed'}
+          foreach($name in @('qpdf.exe','CFH-PDF.ps1','CFH-PDF.cmd','CFH-FORK.md','LICENSE.txt','NOTICE.md','MSVCP140.dll','VCRUNTIME140.dll','VCRUNTIME140_1.dll','licenses\zlib.txt','licenses\libjpeg-turbo.txt','licenses\libspng.txt','licenses\openssl.txt')) { if(!(Test-Path "$dir\$name")){throw "Installed file missing: $name"} }
+          foreach($name in @('MSVCP140.dll','VCRUNTIME140.dll','VCRUNTIME140_1.dll')) { $sig=Get-AuthenticodeSignature "$dir\$name"; Write-Output "Runtime $name signature: $($sig.Status) $($sig.SignerCertificate.Subject)" }
           $python=@"
           import pathlib,sys
           def make(path,text):
