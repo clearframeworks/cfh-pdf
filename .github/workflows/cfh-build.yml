@@ -101,3 +101,18 @@ jobs:
           & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" "$env:RUNNER_TEMP\cfh-office-build.sh"
           if($LASTEXITCODE -ne 0){throw "Office configure/build failed: $LASTEXITCODE"}
           Write-Output 'CFH OFFICE SOURCE BUILD COMPLETED'
+      - name: Verify Office build output
+        shell: pwsh
+        run: |
+          $exe="$env:RUNNER_TEMP\office-src\instdir\program\soffice.exe"
+          if(!(Test-Path $exe)){throw 'Office executable missing after build'}
+          & $exe --version
+          if($LASTEXITCODE -ne 0){throw 'Office version check failed'}
+      - name: Retain exact Office build for testing
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: cfh-office-instdir
+          path: ${{ runner.temp }}\office-src\instdir
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
