@@ -1,35 +1,23 @@
-name: CFH PDF Windows source build
+name: Inspect newer qpdf dependency cache
 on:
   workflow_dispatch:
-permissions:
-  contents: read
+permissions: {}
 jobs:
-  build:
-    runs-on: windows-latest
-    timeout-minutes: 30
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          persist-credentials: false
-      - name: Obtain exact upstream dependency archive
-        shell: pwsh
+      - name: Verify and inspect upstream archive
         run: |
-          $url='https://github.com/qpdf/qpdf/releases/download/v12.4.2/vcpkg.zip'
-          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP\vcpkg.zip"
-          $actual=(Get-FileHash "$env:RUNNER_TEMP\vcpkg.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($actual -ne '82005252fee032135d07c85ad7626a38f26fb253c1e098d1d185f315bea15ebb'){throw 'Upstream dependency archive hash mismatch'}
-          tar -xf "$env:RUNNER_TEMP\vcpkg.zip" -C "$env:GITHUB_WORKSPACE"
-          Get-ChildItem vcpkg\installed -Directory | Select-Object -ExpandProperty Name
-          Get-ChildItem vcpkg\installed -Filter copyright -Recurse | Select-Object -ExpandProperty FullName
-          Get-Content vcpkg\installed\vcpkg\status
-      - name: Configure and build qpdf
-        shell: pwsh
-        run: |
-          cmake --preset msvc
-          if($LASTEXITCODE -ne 0){throw 'Configure failed'}
-          cmake --build cmake-build-msvc --config RelWithDebInfo --parallel 2
-          if($LASTEXITCODE -ne 0){throw 'Build failed'}
-          $exe=Get-ChildItem cmake-build-msvc -Filter qpdf.exe -Recurse | Select-Object -First 1
-          if(-not $exe){throw 'qpdf executable missing'}
-          & $exe.FullName --version
-          if($LASTEXITCODE -ne 0){throw 'qpdf did not run'}
+          set -euo pipefail
+          url='https://github.com/qpdf/qpdf/releases/download/vcpkg-cache-v1/vcpkg-2026-11-05T04.32.30%2B00.00.zip'
+          curl -fLsS "$url" -o "$RUNNER_TEMP/vcpkg.zip"
+          echo 'd0bae754e066873a85ee5c2f819c90b1ec2b2ace4932893cb23fd6d056a53f75  '"$RUNNER_TEMP/vcpkg.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/vcpkg.zip" 'vcpkg/installed/x64-windows-static/share/*/vcpkg.spdx.json' -d "$RUNNER_TEMP/cache"
+          python3 - <<'PY'
+          import json,os,pathlib
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'cache/vcpkg/installed/x64-windows-static/share'
+          for path in sorted(root.glob('*/vcpkg.spdx.json')):
+              data=json.loads(path.read_text())
+              print(path.parent.name,[(x.get('name'),x.get('versionInfo')) for x in data.get('packages',[])])
+          PY
