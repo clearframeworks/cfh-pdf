@@ -50,7 +50,7 @@ jobs:
           git -c core.autocrlf=false clone --depth 1 --branch cfh-office-26-8-2-2 https://github.com/clearframeworks/cfh-office.git $src
           if($LASTEXITCODE -ne 0){throw 'Office source fetch failed'}
           $head=git -C $src rev-parse HEAD
-          if($head -ne '1c2586ec890e903a1379ece5351e0e66ad83091d'){throw "Unexpected office source $head"}
+          if($head -ne '4f58d63d6beea882e8743564f58fcdaa2c26cb81'){throw "Unexpected office source $head"}
           Write-Output "OFFICE SOURCE VERIFIED: $head"
           Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,FreeSpace | Format-Table
       - name: Inspect LODE prerequisite checks
@@ -97,7 +97,7 @@ jobs:
           bash cfh-build/configure.sh
           make -j2
           '@
-          $script | Set-Content "$env:RUNNER_TEMP\cfh-office-build.sh" -Encoding ascii
+          [IO.File]::WriteAllText("$env:RUNNER_TEMP\cfh-office-build.sh", $script.Replace("`r`n", "`n"), [Text.Encoding]::ASCII)
           & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" "$env:RUNNER_TEMP\cfh-office-build.sh"
           if($LASTEXITCODE -ne 0){throw "Office configure/build failed: $LASTEXITCODE"}
           Write-Output 'CFH OFFICE SOURCE BUILD COMPLETED'
