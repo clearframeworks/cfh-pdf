@@ -1,17 +1,14 @@
-name: Probe Office bootstrap endpoints
+name: Verify public CFH PDF download
 on:
   workflow_dispatch:
 permissions: {}
 jobs:
-  probe:
-    runs-on: windows-latest
-    timeout-minutes: 4
+  verify:
+    runs-on: ubuntu-latest
     steps:
-      - name: Check upstream endpoints with bounded requests
-        shell: pwsh
+      - name: Fetch public installer without credentials
         run: |
-          foreach($url in @('https://www.nasm.us/pub/nasm/releasebuilds/2.15.05/win32/nasm-2.15.05-win32.zip','https://download.microsoft.com/download/C/5/D/C5D68AA1-F62E-422A-9084-4AD85CEB8D4D/WindowsUCRT.zip','https://github.com/mozilla/sccache/releases/download/v0.2.15/sccache-v0.2.15-x86_64-pc-windows-msvc.tar.gz','https://download.qt.io/official_releases/jom/jom_1_1_4.zip','https://dev-www.libreoffice.org/extern/pkgconf-2.4.3.exe')) {
-            Write-Output "CHECK $url"
-            & curl.exe -I -L -sS -o NUL -w 'HTTP=%{http_code} TIME=%{time_total}\n' --max-time 15 $url
-            Write-Output "CURL_EXIT=$LASTEXITCODE"
-          }
+          set -euo pipefail
+          curl -fLsS 'https://github.com/clearframeworks/cfh-pdf/releases/download/cfh-pdf-0.1.0/CFH-PDF-Setup.exe' -o "$RUNNER_TEMP/setup.exe"
+          echo 'a921a953041be099e596196bff524e13e0bb607a9227f5dcb4e511c528acba82  '"$RUNNER_TEMP/setup.exe" | sha256sum -c -
+          echo PUBLIC_DOWNLOAD_VERIFIED
