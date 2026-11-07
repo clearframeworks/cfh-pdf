@@ -75,6 +75,8 @@ jobs:
         shell: pwsh
         timeout-minutes: 10
         run: |
+          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -c 'p=$(/usr/bin/cygpath -u "$RUNNER_TEMP"); test -d "$p/office-src" && test -d "$p/lode" && printf "CYGWIN PATH CHECK OK: %s\n" "$p"'
+          if($LASTEXITCODE -ne 0){throw 'Cygwin source path preflight failed'}
           & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -lc "cd `"`$RUNNER_TEMP/lode`" && ./setup --prereq"
           if($LASTEXITCODE -ne 0){throw "LODE prerequisite check failed: $LASTEXITCODE"}
       - name: Prepare upstream office development environment
@@ -90,9 +92,9 @@ jobs:
         run: |
           $script=@'
           set -euo pipefail
-          export LODE_HOME="$(cygpath -u "$RUNNER_TEMP")/lode"
+          export LODE_HOME="$(/usr/bin/cygpath -u "$RUNNER_TEMP")/lode"
           export PATH="$LODE_HOME/opt/bin:$PATH"
-          cd "$(cygpath -u "$RUNNER_TEMP")/office-src"
+          cd "$(/usr/bin/cygpath -u "$RUNNER_TEMP")/office-src"
           printf 'Building Office source: '; git rev-parse HEAD
           bash cfh-build/configure.sh
           make -j2
