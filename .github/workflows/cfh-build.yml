@@ -1,35 +1,23 @@
-name: CFH PDF Windows source build
+name: Office branding and donation inventory
 on:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  build:
-    runs-on: windows-latest
-    timeout-minutes: 30
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          persist-credentials: false
-      - name: Obtain exact upstream dependency archive
-        shell: pwsh
+      - name: Fetch exact CFH Office source
         run: |
-          $url='https://github.com/qpdf/qpdf/releases/download/v12.4.2/vcpkg.zip'
-          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP\vcpkg.zip"
-          $actual=(Get-FileHash "$env:RUNNER_TEMP\vcpkg.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($actual -ne '82005252fee032135d07c85ad7626a38f26fb253c1e098d1d185f315bea15ebb'){throw 'Upstream dependency archive hash mismatch'}
-          tar -xf "$env:RUNNER_TEMP\vcpkg.zip" -C "$env:GITHUB_WORKSPACE"
-          Get-ChildItem vcpkg\installed -Directory | Select-Object -ExpandProperty Name
-          Get-ChildItem vcpkg\installed -Filter copyright -Recurse | Select-Object -ExpandProperty FullName
-          Get-Content vcpkg\installed\vcpkg\status
-      - name: Configure and build qpdf
-        shell: pwsh
+          set -euo pipefail
+          git -c core.autocrlf=false clone --depth 1 --branch cfh-office-26-8-2-2 https://github.com/clearframeworks/cfh-office.git "$RUNNER_TEMP/office"
+          cd "$RUNNER_TEMP/office"
+          test "$(git rev-parse HEAD)" = e9042436df137b9e33148c567501fe8856020a73
+          for f in intro.png intro-highres.png logo.svg logo_inverted.svg logo-sc.svg logo-sc_inverted.svg about.svg donate1.png donate2.png; do test -s "cfh-brand/$f"; done
+          echo ALL_NINE_BRANDING_FILES_PRESENT
+      - name: Inspect donation destinations and branding assets
         run: |
-          cmake --preset msvc
-          if($LASTEXITCODE -ne 0){throw 'Configure failed'}
-          cmake --build cmake-build-msvc --config RelWithDebInfo --parallel 2
-          if($LASTEXITCODE -ne 0){throw 'Build failed'}
-          $exe=Get-ChildItem cmake-build-msvc -Filter qpdf.exe -Recurse | Select-Object -First 1
-          if(-not $exe){throw 'qpdf executable missing'}
-          & $exe.FullName --version
-          if($LASTEXITCODE -ne 0){throw 'qpdf did not run'}
+          cd "$RUNNER_TEMP/office"
+          git grep -n -i -E 'donat(e|ion)|libreoffice.org/donat' -- desktop sfx2 officecfg svx 2>/dev/null | head -n 120 || true
+          find sysui -type f \( -iname '*.ico' -o -iname '*logo*' -o -iname '*intro*' \) | head -n 100
