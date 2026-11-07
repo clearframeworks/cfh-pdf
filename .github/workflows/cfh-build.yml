@@ -76,8 +76,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw "LODE prerequisite check failed: $LASTEXITCODE"}
       - name: Prepare upstream office development environment
         shell: pwsh
-        timeout-minutes: 60
+        timeout-minutes: 8
         run: |
-          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -lc "cd `"`$RUNNER_TEMP/lode`" && ./setup --dev"
+          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -lc "cd `"`$RUNNER_TEMP/lode`" && timeout 300 ./setup --dev"
           if($LASTEXITCODE -ne 0){throw "LODE development setup failed: $LASTEXITCODE"}
           Write-Output 'OFFICE DEVELOPMENT ENVIRONMENT PREPARED'
