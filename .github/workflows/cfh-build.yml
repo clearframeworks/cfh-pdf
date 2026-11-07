@@ -18,3 +18,15 @@ jobs:
           [IO.File]::ReadAllText("$env:TEMP\cfh-wsl.txt",[Text.Encoding]::Unicode) | Write-Output
           $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -all -products '*' -property installationPath
           Write-Output "Visual Studio: $vs"
+      - name: Probe WSL1 with verified Ubuntu image
+        shell: pwsh
+        timeout-minutes: 8
+        run: |
+          $url='https://cloud-images.ubuntu.com/wsl/releases/noble/current/ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz'
+          $file="$env:RUNNER_TEMP\ubuntu-rootfs.tar.gz"
+          Invoke-WebRequest $url -OutFile $file
+          if((Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() -ne '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934'){throw 'Ubuntu image checksum mismatch'}
+          wsl.exe --import CFHProbe "$env:RUNNER_TEMP\wsl-probe" $file --version 1
+          if($LASTEXITCODE -ne 0){throw "WSL1 import failed: $LASTEXITCODE"}
+          wsl.exe -d CFHProbe -- /bin/sh -c 'uname -a; cat /etc/os-release'
+          if($LASTEXITCODE -ne 0){throw 'WSL did not start'}
