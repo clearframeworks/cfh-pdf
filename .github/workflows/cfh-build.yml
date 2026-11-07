@@ -13,7 +13,7 @@ jobs:
           set -euo pipefail
           git -c core.autocrlf=false clone --depth 1 --branch cfh-office-26-8-2-2 https://github.com/clearframeworks/cfh-office.git "$RUNNER_TEMP/office"
           cd "$RUNNER_TEMP/office"
-          test "$(git rev-parse HEAD)" = e9042436df137b9e33148c567501fe8856020a73
+          test "$(git rev-parse HEAD)" = 513824b53a539cd90edb26f07f3462ffdffbd155
           for f in intro.png intro-highres.png logo.svg logo_inverted.svg logo-sc.svg logo-sc_inverted.svg about.svg donate1.png donate2.png; do test -s "cfh-brand/$f"; done
           echo ALL_NINE_BRANDING_FILES_PRESENT
       - name: Inspect donation destinations and branding assets
@@ -23,3 +23,12 @@ jobs:
           echo DONATION_COMMAND_FILES
           git grep -l -F '.uno:Donation' || true
           find sysui -type f \( -iname '*.ico' -o -iname '*logo*' -o -iname '*intro*' \) | head -n 100
+      - name: Verify donation-control transformation
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/office"
+          python3 cfh-build/remove-donation.py
+          echo REMAINING_DONATION_UI_REFERENCES
+          if git grep -n -F '.uno:Donation' -- '*/uiconfig/*.xml' '*/uiconfig/*.ui'; then exit 1; fi
+          git diff --stat
+          python3 cfh-build/remove-donation.py
