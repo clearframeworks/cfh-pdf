@@ -14,10 +14,10 @@ jobs:
       - name: Obtain exact upstream dependency archive
         shell: pwsh
         run: |
-          $url='https://github.com/qpdf/qpdf/releases/download/v12.4.2/vcpkg.zip'
+          $url='https://github.com/qpdf/qpdf/releases/download/vcpkg-cache-v1/vcpkg-2026-11-05T04.32.30%2B00.00.zip'
           Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP\vcpkg.zip"
           $actual=(Get-FileHash "$env:RUNNER_TEMP\vcpkg.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($actual -ne '82005252fee032135d07c85ad7626a38f26fb253c1e098d1d185f315bea15ebb'){throw 'Upstream dependency archive hash mismatch'}
+          if($actual -ne 'd0bae754e066873a85ee5c2f819c90b1ec2b2ace4932893cb23fd6d056a53f75'){throw 'Upstream dependency archive hash mismatch'}
           tar -xf "$env:RUNNER_TEMP\vcpkg.zip" -C "$env:GITHUB_WORKSPACE"
           Get-ChildItem vcpkg\installed -Directory | Select-Object -ExpandProperty Name
           Get-ChildItem vcpkg\installed -Filter copyright -Recurse | Select-Object -ExpandProperty FullName
