@@ -20,4 +20,6 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/office"
           git grep -n -i -E 'donat(e|ion)|libreoffice.org/donat' -- desktop sfx2 officecfg svx 2>/dev/null | head -n 120 || true
+          echo DONATION_COMMAND_FILES
+          git grep -l -F '.uno:Donation' || true
           find sysui -type f \( -iname '*.ico' -o -iname '*logo*' -o -iname '*intro*' \) | head -n 100
