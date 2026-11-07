@@ -14,10 +14,10 @@ public sealed class CfhPdfForm : Form {
  public CfhPdfForm(string path) {
   engine=path; Text="CFH PDF"; Name="CfhPdf"; StartPosition=FormStartPosition.CenterScreen; ClientSize=new Size(720,330); MinimumSize=new Size(650,355); Font=new Font("Segoe UI",10);
   var title=new Label {Text="Combine two PDFs",Font=new Font("Segoe UI",16,FontStyle.Bold),AutoSize=true,Location=new Point(20,15)};
-  var intro=new Label {Text="Pages from the first file come before the second.",AutoSize=true,Location=new Point(22,50)};
+  var intro=new Label {Text="First file pages come first; document features may be lost.",AutoSize=true,Location=new Point(22,50)};
   AddInput("First PDF",first,80,false); AddInput("Second PDF",second,145,false); AddInput("Save combined copy as",output,210,true);
   run.Text="Combine"; run.SetBounds(565,270,125,34); run.Anchor=AnchorStyles.Top|AnchorStyles.Right; run.Click+=Combine;
-  status.Text="The originals are kept."; status.SetBounds(25,275,525,40); status.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;
+  status.Text="Originals are kept; signatures may become invalid."; status.SetBounds(25,275,525,40); status.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;
   Controls.AddRange(new Control[]{title,intro,run,status}); AcceptButton=run;
  }
  void AddInput(string label,TextBox box,int top,bool save) {
