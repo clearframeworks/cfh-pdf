@@ -14,5 +14,7 @@ jobs:
           Get-ComputerInfo | Select-Object WindowsProductName,WindowsVersion,OsArchitecture
           $wsl=Get-Command wsl.exe -ErrorAction SilentlyContinue
           if($wsl) { Write-Output "WSL command: $($wsl.Source)"; & $wsl.Source --status; Write-Output "WSL status exit: $LASTEXITCODE" } else { Write-Output 'WSL command unavailable' }
-          $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products '*' -property installationPath
+          cmd /c "wsl --list --verbose > %TEMP%\cfh-wsl.txt 2>&1"
+          [IO.File]::ReadAllText("$env:TEMP\cfh-wsl.txt",[Text.Encoding]::Unicode) | Write-Output
+          $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -all -products '*' -property installationPath
           Write-Output "Visual Studio: $vs"
