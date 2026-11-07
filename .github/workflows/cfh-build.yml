@@ -30,3 +30,12 @@ jobs:
           if($LASTEXITCODE -ne 0){throw "WSL1 import failed: $LASTEXITCODE"}
           wsl.exe -d CFHProbe -- /bin/sh -c 'uname -a; cat /etc/os-release'
           if($LASTEXITCODE -ne 0){throw 'WSL did not start'}
+      - name: Inspect upstream build automation
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          git clone --depth 1 https://git.libreoffice.org/lode "$env:RUNNER_TEMP\lode"
+          if($LASTEXITCODE -ne 0){throw 'LODE clone failed'}
+          Get-ChildItem "$env:RUNNER_TEMP\lode" | Select-Object -ExpandProperty Name
+          Get-ChildItem "$env:RUNNER_TEMP\lode" -Filter '*readme*' -Recurse | Select-Object -ExpandProperty FullName
+          Get-ChildItem "$env:RUNNER_TEMP\lode" -File | Where-Object { $_.Name -match 'README|setup' } | ForEach-Object { Get-Content $_.FullName -TotalCount 150 }
