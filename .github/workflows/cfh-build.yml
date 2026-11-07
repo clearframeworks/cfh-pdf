@@ -75,7 +75,7 @@ jobs:
         shell: pwsh
         timeout-minutes: 10
         run: |
-          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -c 'export PATH="/usr/bin:$PATH"; command -v autoconf; command -v aclocal; p=$(/usr/bin/cygpath -u "$RUNNER_TEMP"); test -d "$p/office-src" && test -d "$p/lode" && printf "CYGWIN PATH CHECK OK: %s\n" "$p"'
+          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -c 'set -e; export PATH="/usr/bin:$PATH"; command -v autoconf; command -v aclocal; p=$(/usr/bin/cygpath -u "$RUNNER_TEMP"); test -d "$p/office-src" && test -d "$p/lode" && printf "CYGWIN PATH CHECK OK: %s\n" "$p"'
           if($LASTEXITCODE -ne 0){throw 'Cygwin source path preflight failed'}
           & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -lc "cd `"`$RUNNER_TEMP/lode`" && ./setup --prereq"
           if($LASTEXITCODE -ne 0){throw "LODE prerequisite check failed: $LASTEXITCODE"}
