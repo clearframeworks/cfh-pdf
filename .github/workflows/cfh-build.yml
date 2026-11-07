@@ -33,3 +33,23 @@ jobs:
           if(-not $exe){throw 'qpdf executable missing'}
           & $exe.FullName --version
           if($LASTEXITCODE -ne 0){throw 'qpdf did not run'}
+      - name: Record exact dependency manifests and stage executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $stage="$env:RUNNER_TEMP\qpdf-stage"
+          New-Item -ItemType Directory -Force "$stage\licenses" | Out-Null
+          $exe=Get-ChildItem cmake-build-msvc -Filter qpdf.exe -Recurse | Select-Object -First 1
+          Copy-Item $exe.FullName "$stage\qpdf.exe"
+          Copy-Item LICENSE.txt,NOTICE.md,CFH-PDF.ps1,CFH-PDF.cmd,CFH-FORK.md $stage
+          foreach($pkg in @('zlib','libjpeg-turbo','libspng','openssl')) {
+            $dir="vcpkg\installed\x64-windows-static\share\$pkg"
+            Copy-Item "$dir\copyright" "$stage\licenses\$pkg.txt"
+            Get-Content "$dir\vcpkg.spdx.json" -Raw | Write-Output
+          }
+      - name: Upload built engine and notices
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: cfh-pdf-engine-and-notices
+          path: ${{ runner.temp }}\qpdf-stage
+          if-no-files-found: error
