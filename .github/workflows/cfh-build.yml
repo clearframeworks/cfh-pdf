@@ -1,0 +1,35 @@
+name: CFH PDF Windows source build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Obtain exact upstream dependency archive
+        shell: pwsh
+        run: |
+          $url='https://github.com/qpdf/qpdf/releases/download/v12.4.2/vcpkg.zip'
+          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP\vcpkg.zip"
+          $actual=(Get-FileHash "$env:RUNNER_TEMP\vcpkg.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($actual -ne '82005252fee032135d07c85ad7626a38f26fb253c1e098d1d185f315bea15ebb'){throw 'Upstream dependency archive hash mismatch'}
+          tar -xf "$env:RUNNER_TEMP\vcpkg.zip" -C "$env:GITHUB_WORKSPACE"
+          Get-ChildItem vcpkg\installed -Directory | Select-Object -ExpandProperty Name
+          Get-ChildItem vcpkg\installed -Filter copyright -Recurse | Select-Object -ExpandProperty FullName
+          Get-Content vcpkg\installed\vcpkg\status
+      - name: Configure and build qpdf
+        shell: pwsh
+        run: |
+          cmake --preset msvc
+          if($LASTEXITCODE -ne 0){throw 'Configure failed'}
+          cmake --build cmake-build-msvc --config RelWithDebInfo --parallel 2
+          if($LASTEXITCODE -ne 0){throw 'Build failed'}
+          $exe=Get-ChildItem cmake-build-msvc -Filter qpdf.exe -Recurse | Select-Object -First 1
+          if(-not $exe){throw 'qpdf executable missing'}
+          & $exe.FullName --version
+          if($LASTEXITCODE -ne 0){throw 'qpdf did not run'}
