@@ -57,3 +57,9 @@ jobs:
           $lode="$env:RUNNER_TEMP\lode"
           & "$env:ProgramFiles\Git\bin\bash.exe" -lc "cd `"`$RUNNER_TEMP/lode`" && ./setup --help"
           if($LASTEXITCODE -ne 0){throw 'LODE help failed'}
+      - name: Check upstream office prerequisites
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          & "$env:ProgramFiles\Git\bin\bash.exe" -lc "cd `"`$RUNNER_TEMP/lode`" && ./setup --prereq"
+          if($LASTEXITCODE -ne 0){throw "LODE prerequisite check failed: $LASTEXITCODE"}
