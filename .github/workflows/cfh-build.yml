@@ -1,14 +1,24 @@
-name: Verify public CFH PDF download
+name: Diagnose Office Cygwin downloads
 on:
   workflow_dispatch:
 permissions: {}
 jobs:
-  verify:
-    runs-on: ubuntu-latest
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 10
     steps:
-      - name: Fetch public installer without credentials
+      - name: Install minimal verified Cygwin
+        shell: pwsh
         run: |
-          set -euo pipefail
-          curl -fLsS 'https://github.com/clearframeworks/cfh-pdf/releases/download/cfh-pdf-0.1.0/CFH-PDF-Setup.exe' -o "$RUNNER_TEMP/setup.exe"
-          echo 'a921a953041be099e596196bff524e13e0bb607a9227f5dcb4e511c528acba82  '"$RUNNER_TEMP/setup.exe" | sha256sum -c -
-          echo PUBLIC_DOWNLOAD_VERIFIED
+          $setup="$env:RUNNER_TEMP\cygwin-setup.exe"; Invoke-WebRequest 'https://cygwin.com/setup/setup-2.941.x86_64.exe' -OutFile $setup
+          if((Get-FileHash $setup -Algorithm SHA512).Hash.ToLowerInvariant() -ne '9bbbd4de497842446af58af875590ace5d8fa3c557cd7e27328569dfa68e58213da1cc1a6fb7102d4f0f01be38e0b92c6fa74f61b6eb7351a0481ca4bd9e8781'){throw 'Cygwin checksum mismatch'}
+          $root="$env:RUNNER_TEMP\cygwin"; $cache="$env:RUNNER_TEMP\cache"
+          $p=Start-Process $setup -ArgumentList @('-q','-n','-N','-R',"`"$root`"",'-l',"`"$cache`"",'-s','https://mirrors.kernel.org/sourceware/cygwin/','-P','wget') -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'Cygwin install failed'}
+      - name: Test Cygwin wget TLS and bounded access
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -lc 'wget --timeout=20 --tries=1 --spider https://www.nasm.us/pub/nasm/releasebuilds/2.15.05/win32/nasm-2.15.05-win32.zip'
+          Write-Output "CYGWIN_WGET_EXIT=$LASTEXITCODE"
+          if($LASTEXITCODE -ne 0){throw 'Cygwin wget failed'}
