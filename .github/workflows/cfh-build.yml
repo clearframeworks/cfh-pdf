@@ -1,35 +1,18 @@
-name: CFH PDF Windows source build
+name: Office Windows build environment preflight
 on:
   workflow_dispatch:
-permissions:
-  contents: read
+permissions: {}
 jobs:
-  build:
+  probe:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          persist-credentials: false
-      - name: Obtain exact upstream dependency archive
+      - name: Inspect Windows build prerequisites
         shell: pwsh
         run: |
-          $url='https://github.com/qpdf/qpdf/releases/download/v12.4.2/vcpkg.zip'
-          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP\vcpkg.zip"
-          $actual=(Get-FileHash "$env:RUNNER_TEMP\vcpkg.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($actual -ne '82005252fee032135d07c85ad7626a38f26fb253c1e098d1d185f315bea15ebb'){throw 'Upstream dependency archive hash mismatch'}
-          tar -xf "$env:RUNNER_TEMP\vcpkg.zip" -C "$env:GITHUB_WORKSPACE"
-          Get-ChildItem vcpkg\installed -Directory | Select-Object -ExpandProperty Name
-          Get-ChildItem vcpkg\installed -Filter copyright -Recurse | Select-Object -ExpandProperty FullName
-          Get-Content vcpkg\installed\vcpkg\status
-      - name: Configure and build qpdf
-        shell: pwsh
-        run: |
-          cmake --preset msvc
-          if($LASTEXITCODE -ne 0){throw 'Configure failed'}
-          cmake --build cmake-build-msvc --config RelWithDebInfo --parallel 2
-          if($LASTEXITCODE -ne 0){throw 'Build failed'}
-          $exe=Get-ChildItem cmake-build-msvc -Filter qpdf.exe -Recurse | Select-Object -First 1
-          if(-not $exe){throw 'qpdf executable missing'}
-          & $exe.FullName --version
-          if($LASTEXITCODE -ne 0){throw 'qpdf did not run'}
+          Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,Size,FreeSpace | Format-Table
+          Get-ComputerInfo | Select-Object WindowsProductName,WindowsVersion,OsArchitecture
+          $wsl=Get-Command wsl.exe -ErrorAction SilentlyContinue
+          if($wsl) { Write-Output "WSL command: $($wsl.Source)"; & $wsl.Source --status; Write-Output "WSL status exit: $LASTEXITCODE" } else { Write-Output 'WSL command unavailable' }
+          $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products '*' -property installationPath
+          Write-Output "Visual Studio: $vs"
