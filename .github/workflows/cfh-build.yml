@@ -14,9 +14,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $run=gh api repos/clearframeworks/cfh-pdf/actions/runs/42403715342 | ConvertFrom-Json
-          if($run.head_sha -ne '2d2e8e8ffcbe769169a2289dec4a039665dce0df' -or $run.conclusion -ne 'success'){throw 'Candidate identity mismatch'}
-          gh run download 42403715342 --repo clearframeworks/cfh-pdf -n cfh-pdf-engine-and-notices -D "$env:RUNNER_TEMP\stage"
+          $run=gh api repos/clearframeworks/cfh-pdf/actions/runs/42404795900 | ConvertFrom-Json
+          if($run.head_sha -ne '900031ce251aa8237a7becbdd51baf72600bb457' -or $run.conclusion -ne 'success'){throw 'Candidate identity mismatch'}
+          gh run download 42404795900 --repo clearframeworks/cfh-pdf -n cfh-pdf-engine-and-notices -D "$env:RUNNER_TEMP\stage"
           if($LASTEXITCODE -ne 0){throw 'Artifact download failed'}
       - name: Create test installer
         shell: pwsh
@@ -36,6 +36,9 @@ jobs:
           Compression=lzma2
           [Files]
           Source: "$stage\qpdf.exe"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "$stage\MSVCP140.dll"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "$stage\VCRUNTIME140.dll"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "$stage\VCRUNTIME140_1.dll"; DestDir: "{app}"; Flags: ignoreversion
           Source: "$stage\CFH-PDF.ps1"; DestDir: "{app}"; Flags: ignoreversion
           Source: "$stage\CFH-PDF.cmd"; DestDir: "{app}"; Flags: ignoreversion
           Source: "$stage\CFH-FORK.md"; DestDir: "{app}"; Flags: ignoreversion
@@ -49,6 +52,12 @@ jobs:
           iscc "$env:RUNNER_TEMP\pdf.iss"
           if($LASTEXITCODE -ne 0){throw 'Installer build failed'}
           Get-FileHash "$env:RUNNER_TEMP\installer\CFH-PDF-Setup.exe" -Algorithm SHA256 | Format-List
+      - name: Retain candidate installer
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: cfh-pdf-installer-unsigned
+          path: ${{ runner.temp }}\installer\CFH-PDF-Setup.exe
+          if-no-files-found: error
       - name: Install and test page assembly
         shell: pwsh
         timeout-minutes: 4
