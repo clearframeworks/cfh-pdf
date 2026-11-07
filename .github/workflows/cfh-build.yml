@@ -34,7 +34,7 @@ jobs:
         shell: pwsh
         timeout-minutes: 45
         run: |
-          git clone --depth 1 https://git.libreoffice.org/lode "$env:RUNNER_TEMP\lode"
+          git -c core.autocrlf=false clone --depth 1 https://git.libreoffice.org/lode "$env:RUNNER_TEMP\lode"
           if($LASTEXITCODE -ne 0){throw 'LODE clone failed'}
           Get-ChildItem "$env:RUNNER_TEMP\lode" | Select-Object -ExpandProperty Name
           Get-ChildItem "$env:RUNNER_TEMP\lode" -Filter '*readme*' -Recurse | Select-Object -ExpandProperty FullName
@@ -44,7 +44,7 @@ jobs:
         timeout-minutes: 25
         run: |
           $src="$env:RUNNER_TEMP\office-src"
-          git clone --depth 1 --branch libreoffice-26.8.2.2 https://github.com/LibreOffice/core.git $src
+          git -c core.autocrlf=false clone --depth 1 --branch libreoffice-26.8.2.2 https://github.com/LibreOffice/core.git $src
           if($LASTEXITCODE -ne 0){throw 'Office source fetch failed'}
           $head=git -C $src rev-parse HEAD
           if($head -ne '9dea406ab7695df6325b11b0e19fdca8db4b7276'){throw "Unexpected office source $head"}
