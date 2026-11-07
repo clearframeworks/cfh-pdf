@@ -1,160 +1,22 @@
-name: CFH PDF installed diagnostic
+name: Attach tested PDF release asset
 on:
   workflow_dispatch:
 permissions:
-  contents: read
   actions: read
+  contents: write
 jobs:
-  test:
-    runs-on: windows-latest
-    timeout-minutes: 12
+  attach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Fetch exact candidate
-        shell: pwsh
+      - name: Attach exact tested installer to existing draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $run=gh api repos/clearframeworks/cfh-pdf/actions/runs/42405910426 | ConvertFrom-Json
-          if($run.head_sha -ne 'e1bc0d31eb2ef884684b0457068250520e568ac3' -or $run.conclusion -ne 'success'){throw 'Candidate identity mismatch'}
-          gh run download 42405910426 --repo clearframeworks/cfh-pdf -n cfh-pdf-engine-and-notices -D "$env:RUNNER_TEMP\stage"
-          if($LASTEXITCODE -ne 0){throw 'Artifact download failed'}
-      - name: Create test installer
-        shell: pwsh
-        run: |
-          $stage="$env:RUNNER_TEMP\stage"
-          $iss=@"
-          [Setup]
-          AppId=CFHPDF
-          AppName=CFH PDF
-          AppVersion=0.1.0
-          AppPublisher=Coders for Humanity
-          DefaultDirName={localappdata}\Programs\CFH PDF
-          DefaultGroupName=CFH PDF
-          PrivilegesRequired=lowest
-          OutputDir=$env:RUNNER_TEMP\installer
-          OutputBaseFilename=CFH-PDF-Setup
-          Compression=lzma2
-          [Files]
-          Source: "$stage\qpdf.exe"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "$stage\MSVCP140.dll"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "$stage\VCRUNTIME140.dll"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "$stage\VCRUNTIME140_1.dll"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "$stage\CFH-PDF.ps1"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "$stage\CFH-PDF.cmd"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "$stage\CFH-FORK.md"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "$stage\LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "$stage\NOTICE.md"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "$stage\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion
-          [Icons]
-          Name: "{group}\CFH PDF"; Filename: "{app}\CFH-PDF.cmd"
-          "@
-          $iss | Set-Content "$env:RUNNER_TEMP\pdf.iss" -Encoding utf8
-          iscc "$env:RUNNER_TEMP\pdf.iss"
-          if($LASTEXITCODE -ne 0){throw 'Installer build failed'}
-          Get-FileHash "$env:RUNNER_TEMP\installer\CFH-PDF-Setup.exe" -Algorithm SHA256 | Format-List
-      - name: Retain candidate installer
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: cfh-pdf-installer-unsigned
-          path: ${{ runner.temp }}\installer\CFH-PDF-Setup.exe
-          if-no-files-found: error
-      - name: Install and test page assembly
-        shell: pwsh
-        timeout-minutes: 4
-        run: |
-          $ErrorActionPreference='Stop'
-          $dir="$env:RUNNER_TEMP\installed"
-          $p=Start-Process "$env:RUNNER_TEMP\installer\CFH-PDF-Setup.exe" -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir") -Wait -PassThru
-          if($p.ExitCode -ne 0){throw 'Installer failed'}
-          foreach($name in @('qpdf.exe','CFH-PDF.ps1','CFH-PDF.cmd','CFH-FORK.md','LICENSE.txt','NOTICE.md','MSVCP140.dll','VCRUNTIME140.dll','VCRUNTIME140_1.dll','licenses\zlib.txt','licenses\libjpeg-turbo.txt','licenses\libspng.txt','licenses\openssl.txt')) { if(!(Test-Path "$dir\$name")){throw "Installed file missing: $name"} }
-          foreach($name in @('MSVCP140.dll','VCRUNTIME140.dll','VCRUNTIME140_1.dll')) { $sig=Get-AuthenticodeSignature "$dir\$name"; Write-Output "Runtime $name signature: $($sig.Status) $($sig.SignerCertificate.Subject)" }
-          $python=@"
-          import pathlib,sys
-          def make(path,text):
-              objs=[b'<< /Type /Catalog /Pages 2 0 R >>',b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',None,b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
-              content=f'BT /F1 12 Tf 20 100 Td ({text}) Tj ET'.encode(); objs[3]=b'<< /Length %d >>\nstream\n'%len(content)+content+b'\nendstream'
-              out=bytearray(b'%PDF-1.4\n'); offsets=[0]
-              for i,obj in enumerate(objs,1): offsets.append(len(out)); out.extend(f'{i} 0 obj\n'.encode()+obj+b'\nendobj\n')
-              xref=len(out); out.extend(f'xref\n0 {len(offsets)}\n0000000000 65535 f \n'.encode()); out.extend(b''.join(f'{n:010d} 00000 n \n'.encode() for n in offsets[1:])); out.extend(f'trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n'.encode()); pathlib.Path(path).write_bytes(out)
-          make(sys.argv[1],'FIRST'); make(sys.argv[2],'SECOND')
-          "@
-          $python | Set-Content "$env:RUNNER_TEMP\pdf-fixture.py" -Encoding utf8
-          $a="$env:RUNNER_TEMP\first.pdf"; $b="$env:RUNNER_TEMP\second.pdf"; $out="$env:RUNNER_TEMP\combined.pdf"
-          python "$env:RUNNER_TEMP\pdf-fixture.py" $a $b
-          if($LASTEXITCODE -ne 0){throw 'Fixture creation failed'}
-          $hashA=(Get-FileHash $a).Hash; $hashB=(Get-FileHash $b).Hash
-          $before=@(Get-Process powershell -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
-          $launcher=Start-Process "$dir\CFH-PDF.cmd" -PassThru
-          $app=$null
-          for($i=0;$i -lt 30;$i++){ $app=Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.Id -notin $before } | Select-Object -First 1; if($app){break}; Start-Sleep -Seconds 1 }
-          if(-not $app){throw 'Launcher did not start'}
-          try {
-            Add-Type @"
-          using System;
-          using System.Collections.Generic;
-          using System.Runtime.InteropServices;
-          using System.Text;
-          public static class NativePdfTest {
-            public delegate bool Callback(IntPtr h, IntPtr p);
-            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string cls,string title);
-            [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr h,Callback c,IntPtr p);
-            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h,StringBuilder s,int n);
-            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h,StringBuilder s,int n);
-            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h,int msg,IntPtr w,string l);
-            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h,int msg,IntPtr w,StringBuilder l);
-            [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h,int msg,IntPtr w,IntPtr l);
-            [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr h);
-            public static List<IntPtr> Children(IntPtr h) { var list=new List<IntPtr>(); EnumChildWindows(h,(x,p)=>{ list.Add(x); return true; },IntPtr.Zero); return list; }
-            public static string Class(IntPtr h) { var b=new StringBuilder(256); GetClassName(h,b,b.Capacity); return b.ToString(); }
-            public static string Text(IntPtr h) { var b=new StringBuilder(1000002); SendMessage(h,13,(IntPtr)b.Capacity,b); return b.ToString(); }
-            public static void Set(IntPtr h,string s) { SendMessage(h,12,IntPtr.Zero,s); }
-            public static void Click(IntPtr h) { SendMessage(h,245,IntPtr.Zero,IntPtr.Zero); }
-          }
-          "@
-            Add-Type -AssemblyName UIAutomationClient
-            $element=$null
-            for($i=0;$i -lt 30;$i++) {
-              if($app.HasExited){throw 'App exited during startup'}
-              $pidCond=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty,$app.Id)
-              $titleCond=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'CFH PDF')
-              $cond=New-Object System.Windows.Automation.AndCondition($pidCond,$titleCond)
-              $element=[System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children,$cond)
-              if($element){break}; Start-Sleep -Seconds 1
-            }
-            if(-not $element){throw 'PNG form missing'}
-            $window=[IntPtr]$element.Current.NativeWindowHandle
-            if($window -eq [IntPtr]::Zero){throw 'PNG form has no native handle'}
-            $children=[NativePdfTest]::Children($window)
-            $edits=@($children | Where-Object { [NativePdfTest]::Class($_) -match 'EDIT' })
-            $buttons=@($children | Where-Object { [NativePdfTest]::Class($_) -match 'BUTTON' })
-            $button=$buttons | Where-Object { [NativePdfTest]::Text($_) -eq 'Combine' } | Select-Object -First 1
-            if($edits.Count -ne 3 -or -not $button){throw "Unexpected controls: $($edits.Count)"}
-            function Wait-Work {for($i=0;$i -lt 60;$i++){Start-Sleep -Seconds 1;if([NativePdfTest]::IsWindowEnabled($button)){return}};throw 'Combine timed out'}
-            [NativePdfTest]::Set($edits[0],$a); [NativePdfTest]::Set($edits[1],$b); [NativePdfTest]::Set($edits[2],$out); [NativePdfTest]::Click($button); Wait-Work
-            if(!(Test-Path $out)){throw 'Combined output missing'}
-            if((Get-FileHash $a).Hash -ne $hashA -or (Get-FileHash $b).Hash -ne $hashB){throw 'Originals changed'}
-            $q="$dir\qpdf.exe"; $n=& $q --show-npages $out
-            if($LASTEXITCODE -ne 0 -or $n -ne '2'){throw 'Page count wrong'}
-            & $q --split-pages=1 $out "$env:RUNNER_TEMP\page-%d.pdf"
-            if($LASTEXITCODE -ne 0){throw 'Page split failed'}
-            & $q --qdf --object-streams=disable "$env:RUNNER_TEMP\page-1.pdf" "$env:RUNNER_TEMP\first-qdf.pdf"
-            & $q --qdf --object-streams=disable "$env:RUNNER_TEMP\page-2.pdf" "$env:RUNNER_TEMP\second-qdf.pdf"
-            if((Get-Content "$env:RUNNER_TEMP\first-qdf.pdf" -Raw) -notmatch 'FIRST' -or (Get-Content "$env:RUNNER_TEMP\second-qdf.pdf" -Raw) -notmatch 'SECOND'){throw 'Page order wrong'}
-            $outHash=(Get-FileHash $out).Hash; [NativePdfTest]::Click($button)
-            if((Get-FileHash $out).Hash -ne $outHash){throw 'Existing destination changed'}
-            [NativePdfTest]::Set($edits[2],$a); [NativePdfTest]::Click($button)
-            if((Get-FileHash $a).Hash -ne $hashA){throw 'Original overwritten'}
-            $bad="$env:RUNNER_TEMP\bad.pdf"; $badOut="$env:RUNNER_TEMP\bad-copy.pdf"; [IO.File]::WriteAllText($bad,'not a pdf')
-            [NativePdfTest]::Set($edits[0],$bad); [NativePdfTest]::Set($edits[2],$badOut); [NativePdfTest]::Click($button); Wait-Work
-            if(Test-Path $badOut){throw 'Invalid input produced output'}
-            $encrypted="$env:RUNNER_TEMP\encrypted.pdf"; & $q --encrypt secret owner 256 -- $a $encrypted
-            if($LASTEXITCODE -ne 0){throw 'Encrypted fixture creation failed'}
-            [NativePdfTest]::Set($edits[0],$encrypted); [NativePdfTest]::Click($button); Wait-Work
-            if(Test-Path $badOut){throw 'Password protected input produced output'}
-            if(Get-ChildItem "$env:RUNNER_TEMP\.cfh-*.pdf" -ErrorAction SilentlyContinue){throw 'Temporary output left behind'}
-            Write-Output 'INSTALLED LAUNCHER PAGE ORDER ORIGINAL PROTECTION ERROR CLEANUP VERIFIED'
-          } finally {if($app -and -not $app.HasExited){Stop-Process -Id $app.Id -Force}}
-          $u=Get-ChildItem "$dir\unins*.exe" | Select-Object -First 1
-          if(-not $u){throw 'Uninstaller missing'}
-          $p=Start-Process $u.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
-          if($p.ExitCode -ne 0){throw 'Uninstall failed'}
+          set -euo pipefail
+          run=$(gh api repos/clearframeworks/cfh-pdf/actions/runs/42406478208 --jq .conclusion)
+          test "$run" = success
+          gh run download 42406478208 --repo clearframeworks/cfh-pdf -n cfh-pdf-installer-unsigned -D "$RUNNER_TEMP/installer"
+          file="$RUNNER_TEMP/installer/CFH-PDF-Setup.exe"
+          echo 'a921a953041be099e596196bff524e13e0bb607a9227f5dcb4e511c528acba82  '"$file" | sha256sum -c -
+          gh release upload cfh-pdf-0.1.0 "$file" --repo clearframeworks/cfh-pdf
