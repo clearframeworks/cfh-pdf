@@ -5,7 +5,7 @@ permissions: {}
 jobs:
   probe:
     runs-on: windows-latest
-    timeout-minutes: 5
+    timeout-minutes: 45
     steps:
       - name: Inspect Windows build prerequisites
         shell: pwsh
@@ -32,10 +32,28 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'WSL did not start'}
       - name: Inspect upstream build automation
         shell: pwsh
-        timeout-minutes: 5
+        timeout-minutes: 45
         run: |
           git clone --depth 1 https://git.libreoffice.org/lode "$env:RUNNER_TEMP\lode"
           if($LASTEXITCODE -ne 0){throw 'LODE clone failed'}
           Get-ChildItem "$env:RUNNER_TEMP\lode" | Select-Object -ExpandProperty Name
           Get-ChildItem "$env:RUNNER_TEMP\lode" -Filter '*readme*' -Recurse | Select-Object -ExpandProperty FullName
           Get-ChildItem "$env:RUNNER_TEMP\lode" -File | Where-Object { $_.Name -match 'README|setup' } | ForEach-Object { Get-Content $_.FullName -TotalCount 150 }
+      - name: Fetch pinned office source in isolated runner
+        shell: pwsh
+        timeout-minutes: 25
+        run: |
+          $src="$env:RUNNER_TEMP\office-src"
+          git clone --depth 1 --branch libreoffice-26.8.2.2 https://github.com/LibreOffice/core.git $src
+          if($LASTEXITCODE -ne 0){throw 'Office source fetch failed'}
+          $head=git -C $src rev-parse HEAD
+          if($head -ne '9dea406ab7695df6325b11b0e19fdca8db4b7276'){throw "Unexpected office source $head"}
+          Write-Output "OFFICE SOURCE VERIFIED: $head"
+          Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,FreeSpace | Format-Table
+      - name: Inspect LODE prerequisite checks
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $lode="$env:RUNNER_TEMP\lode"
+          & "$env:ProgramFiles\Git\bin\bash.exe" -lc "cd `"`$RUNNER_TEMP/lode`" && ./setup --help"
+          if($LASTEXITCODE -ne 0){throw 'LODE help failed'}
