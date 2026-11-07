@@ -65,7 +65,7 @@ jobs:
           Invoke-WebRequest 'https://cygwin.com/setup/setup-2.941.x86_64.exe' -OutFile $setup
           if((Get-FileHash $setup -Algorithm SHA512).Hash.ToLowerInvariant() -ne '9bbbd4de497842446af58af875590ace5d8fa3c557cd7e27328569dfa68e58213da1cc1a6fb7102d4f0f01be38e0b92c6fa74f61b6eb7351a0481ca4bd9e8781'){throw 'Cygwin setup checksum mismatch'}
           $root="$env:RUNNER_TEMP\cygwin"; $cache="$env:RUNNER_TEMP\cyg-cache"
-          $p=Start-Process $setup -ArgumentList @('-q','-n','-N','-R',"`"$root`"",'-l',"`"$cache`"",'-s','https://mirrors.kernel.org/sourceware/cygwin/','-P','git,perl,make') -Wait -PassThru
+          $p=Start-Process $setup -ArgumentList @('-q','-n','-N','-R',"`"$root`"",'-l',"`"$cache`"",'-s','https://mirrors.kernel.org/sourceware/cygwin/','-P','git,perl,make,wget') -Wait -PassThru
           if($p.ExitCode -ne 0){throw "Cygwin setup failed: $($p.ExitCode)"}
           if(!(Test-Path "$root\bin\bash.exe")){throw 'Cygwin bash missing'}
       - name: Check upstream office prerequisites
