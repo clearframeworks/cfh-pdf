@@ -13,7 +13,7 @@ jobs:
           set -euo pipefail
           git -c core.autocrlf=false clone --depth 1 --branch cfh-office-26-8-2-2 https://github.com/clearframeworks/cfh-office.git "$RUNNER_TEMP/office"
           cd "$RUNNER_TEMP/office"
-          test "$(git rev-parse HEAD)" = 4bab80fa537d5f3c85ccbdfe7c3d5a078fbdf5ff
+          test "$(git rev-parse HEAD)" = 4f58d63d6beea882e8743564f58fcdaa2c26cb81
           for f in intro.png intro-highres.png logo.svg logo_inverted.svg logo-sc.svg logo-sc_inverted.svg about.svg donate1.png donate2.png; do test -s "cfh-brand/$f"; done
           echo ALL_NINE_BRANDING_FILES_PRESENT
       - name: Inspect donation destinations and branding assets
@@ -31,6 +31,9 @@ jobs:
           echo REMAINING_DONATION_UI_REFERENCES
           if git grep -n -F '.uno:Donation' -- '*/uiconfig/*.xml' '*/uiconfig/*.ui'; then exit 1; fi
           git diff --stat
+          test "$(git diff --name-only | wc -l)" -eq 34
+          git diff --binary > "$RUNNER_TEMP/cfh-office-donation-transform.patch"
+          sha256sum "$RUNNER_TEMP/cfh-office-donation-transform.patch"
           python3 cfh-build/remove-donation.py
       - name: Verify profile-independent donation source changes
         run: |
@@ -45,3 +48,10 @@ jobs:
           assert 'openUriExternally' not in section and 'break;' in section
           print('DONATION_DISPATCH_DISABLED')
           PY
+      - name: Retain corresponding source transformation
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: cfh-office-source-transformation-4f58d63d
+          path: ${{ runner.temp }}/cfh-office-donation-transform.patch
+          if-no-files-found: error
+          retention-days: 7
