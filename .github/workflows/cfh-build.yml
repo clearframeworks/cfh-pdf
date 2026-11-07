@@ -21,7 +21,7 @@ jobs:
           tar -xf "$env:RUNNER_TEMP\vcpkg.zip" -C "$env:GITHUB_WORKSPACE"
           Get-ChildItem vcpkg\installed -Directory | Select-Object -ExpandProperty Name
           Get-ChildItem vcpkg\installed -Filter copyright -Recurse | Select-Object -ExpandProperty FullName
-          Get-Content vcpkg\installed\vcpkg\status
+          Get-ChildItem vcpkg\installed\x64-windows-static\share -Recurse -File | Select-Object -ExpandProperty FullName
       - name: Configure and build qpdf
         shell: pwsh
         run: |
