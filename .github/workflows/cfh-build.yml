@@ -25,7 +25,7 @@ jobs:
       - name: Configure and build qpdf
         shell: pwsh
         run: |
-          cmake --preset msvc
+          cmake --preset msvc -DCMAKE_EXE_LINKER_FLAGS=/MAP
           if($LASTEXITCODE -ne 0){throw 'Configure failed'}
           cmake --build cmake-build-msvc --config RelWithDebInfo --parallel 2
           if($LASTEXITCODE -ne 0){throw 'Build failed'}
@@ -33,6 +33,19 @@ jobs:
           if(-not $exe){throw 'qpdf executable missing'}
           & $exe.FullName --version
           if($LASTEXITCODE -ne 0){throw 'qpdf did not run'}
+      - name: Stage supported Windows runtime
+        shell: pwsh
+        run: |
+          cmake --install cmake-build-msvc --config RelWithDebInfo --prefix "$env:RUNNER_TEMP\qpdf-installed"
+          if($LASTEXITCODE -ne 0){throw 'CMake install failed'}
+          Get-ChildItem "$env:RUNNER_TEMP\qpdf-installed" -Filter '*.dll' -Recurse | Select-Object -ExpandProperty FullName
+          $maps=Get-ChildItem cmake-build-msvc -Filter qpdf.map -Recurse
+          if(-not $maps){throw 'qpdf link map missing'}
+          foreach($map in $maps){
+            $matches=Select-String -Path $map.FullName -Pattern 'tj3LoadImage|tjLoadImage|start_input_png'
+            if($matches){$matches | Write-Output; throw 'Affected image loader appears in link map'}
+          }
+          Write-Output 'AFFECTED TURBOJPEG LOADER SYMBOLS NOT FOUND IN QPDF LINK MAP'
       - name: Record exact dependency manifests and stage executable
         shell: pwsh
         run: |
@@ -41,6 +54,7 @@ jobs:
           New-Item -ItemType Directory -Force "$stage\licenses" | Out-Null
           $exe=Get-ChildItem cmake-build-msvc -Filter qpdf.exe -Recurse | Select-Object -First 1
           Copy-Item $exe.FullName "$stage\qpdf.exe"
+          foreach($name in @('MSVCP140.dll','VCRUNTIME140.dll','VCRUNTIME140_1.dll')){ $dll=Get-ChildItem "$env:RUNNER_TEMP\qpdf-installed" -Filter $name -Recurse | Select-Object -First 1; if(-not $dll){throw "Runtime missing: $name"}; Copy-Item $dll.FullName $stage }
           Copy-Item LICENSE.txt,NOTICE.md,CFH-PDF.ps1,CFH-PDF.cmd,CFH-FORK.md $stage
           foreach($pkg in @('zlib','libjpeg-turbo','libspng','openssl')) {
             $dir="vcpkg\installed\x64-windows-static\share\$pkg"
