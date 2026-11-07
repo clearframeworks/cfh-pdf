@@ -61,4 +61,4 @@ jobs:
           git clone --quiet https://git.libreoffice.org/lode "$RUNNER_TEMP/lode"
           git -C "$RUNNER_TEMP/lode" checkout --quiet d76638471dd89d978ea1109e40c465194b76abc5
           cd "$RUNNER_TEMP/lode"
-          rg -n -C 5 'core\.git|dev/core|clone.*core|setup_dev|setup.*dev' setup bin || true
+          grep -R -n -E -C 5 'core\.git|dev/core|clone.*core|setup_dev|setup.*dev' setup bin || true
