@@ -13,7 +13,7 @@ jobs:
           set -euo pipefail
           git -c core.autocrlf=false clone --depth 1 --branch cfh-office-26-8-2-2 https://github.com/clearframeworks/cfh-office.git "$RUNNER_TEMP/office"
           cd "$RUNNER_TEMP/office"
-          test "$(git rev-parse HEAD)" = 513824b53a539cd90edb26f07f3462ffdffbd155
+          test "$(git rev-parse HEAD)" = 4bab80fa537d5f3c85ccbdfe7c3d5a078fbdf5ff
           for f in intro.png intro-highres.png logo.svg logo_inverted.svg logo-sc.svg logo-sc_inverted.svg about.svg donate1.png donate2.png; do test -s "cfh-brand/$f"; done
           echo ALL_NINE_BRANDING_FILES_PRESENT
       - name: Inspect donation destinations and branding assets
@@ -32,3 +32,16 @@ jobs:
           if git grep -n -F '.uno:Donation' -- '*/uiconfig/*.xml' '*/uiconfig/*.ui'; then exit 1; fi
           git diff --stat
           python3 cfh-build/remove-donation.py
+      - name: Verify profile-independent donation source changes
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/office"
+          grep -F 'const bool bShowDonation(false);' sfx2/source/dialog/backingwindow.cxx
+          if grep -F 'AppendInfoBar(u"donate"' sfx2/source/view/viewfrm.cxx; then exit 1; fi
+          python3 - <<'PY'
+          import pathlib
+          t=pathlib.Path('sfx2/source/appl/appserv.cxx').read_text()
+          section=t.split('case SID_DONATION:',1)[1].split('case SID_WHATSNEW:',1)[0]
+          assert 'openUriExternally' not in section and 'break;' in section
+          print('DONATION_DISPATCH_DISABLED')
+          PY
