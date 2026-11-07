@@ -1,17 +1,17 @@
-name: Inspect Office environment bootstrap
+name: Probe Office bootstrap endpoints
 on:
   workflow_dispatch:
 permissions: {}
 jobs:
-  inspect:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 4
     steps:
-      - name: Inspect upstream LODE scripts
+      - name: Check upstream endpoints with bounded requests
+        shell: pwsh
         run: |
-          set -euo pipefail
-          git -c core.autocrlf=false clone --depth 1 https://git.libreoffice.org/lode "$RUNNER_TEMP/lode"
-          cd "$RUNNER_TEMP/lode"
-          git rev-parse HEAD
-          cat bin/utils_Cygwin.sh
-          sed -n '150,340p' setup
+          foreach($url in @('https://www.nasm.us/pub/nasm/releasebuilds/2.15.05/win32/nasm-2.15.05-win32.zip','https://download.microsoft.com/download/C/5/D/C5D68AA1-F62E-422A-9084-4AD85CEB8D4D/WindowsUCRT.zip','https://github.com/mozilla/sccache/releases/download/v0.2.15/sccache-v0.2.15-x86_64-pc-windows-msvc.tar.gz','https://download.qt.io/official_releases/jom/jom_1_1_4.zip','https://dev-www.libreoffice.org/extern/pkgconf-2.4.3.exe')) {
+            Write-Output "CHECK $url"
+            & curl.exe -I -L -sS -o NUL -w 'HTTP=%{http_code} TIME=%{time_total}\n' --max-time 15 $url
+            Write-Output "CURL_EXIT=$LASTEXITCODE"
+          }
