@@ -97,7 +97,7 @@ jobs:
           cd "$(/usr/bin/cygpath -u "$RUNNER_TEMP")/office-src"
           export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$PWD"
           printf 'Building Office source: '; git rev-parse HEAD
-          bash cfh-build/configure.sh
+          bash cfh-build/configure.sh --with-visual-studio=2026
           make -j2
           '@
           [IO.File]::WriteAllText("$env:RUNNER_TEMP\cfh-office-build.sh", $script.Replace("`r`n", "`n"), [Text.Encoding]::ASCII)
