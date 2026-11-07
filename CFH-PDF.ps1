@@ -27,6 +27,7 @@ public sealed class CfhPdfForm : Form {
   Controls.AddRange(new Control[]{l,box,browse});
  }
  static string Quote(string s) { var b=new StringBuilder("\""); int n=0; foreach(char c in s) { if(c=='\\'){n++;continue;} if(c=='\"'){b.Append('\\',n*2+1);b.Append('\"');n=0;continue;} b.Append('\\',n);n=0;b.Append(c); } b.Append('\\',n*2);b.Append('\"');return b.ToString(); }
+ async Task Drain(StreamReader reader) { var buffer=new char[4096]; while(await reader.ReadAsync(buffer,0,buffer.Length)>0) {} }
  async void Combine(object sender,EventArgs e) {
   string a,b,dst;
   try { a=Path.GetFullPath(first.Text); b=Path.GetFullPath(second.Text); dst=Path.GetFullPath(output.Text); } catch {status.Text="Choose valid file paths.";return;}
@@ -38,7 +39,7 @@ public sealed class CfhPdfForm : Form {
   string temp=Path.Combine(Path.GetDirectoryName(dst),".cfh-"+Guid.NewGuid().ToString("N")+".pdf"); run.Enabled=false; status.Text="Combining...";
   try {
    var p=new Process {StartInfo=new ProcessStartInfo {FileName=engine,Arguments="--empty --pages "+Quote(a)+" "+Quote(b)+" -- "+Quote(temp),UseShellExecute=false,CreateNoWindow=true,RedirectStandardError=true,RedirectStandardOutput=true}};
-   p.Start(); var err=p.StandardError.ReadToEndAsync(); var stdout=p.StandardOutput.ReadToEndAsync(); await Task.Run(()=>p.WaitForExit()); await Task.WhenAll(err,stdout);
+   p.Start(); var err=Drain(p.StandardError); var stdout=Drain(p.StandardOutput); await Task.Run(()=>p.WaitForExit()); await Task.WhenAll(err,stdout);
    if(p.ExitCode!=0||!File.Exists(temp)){status.Text="Could not combine these PDFs. Check the files and try again.";}
    else {File.Move(temp,dst);status.Text="Combined copy saved.";}
   } catch(Exception) {status.Text="Could not save the copy. Check the folder and try again.";}
