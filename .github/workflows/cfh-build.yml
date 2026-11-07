@@ -13,7 +13,7 @@ jobs:
           url='https://github.com/qpdf/qpdf/releases/download/vcpkg-cache-v1/vcpkg-2026-11-05T04.32.30%2B00.00.zip'
           curl -fLsS "$url" -o "$RUNNER_TEMP/vcpkg.zip"
           echo 'd0bae754e066873a85ee5c2f819c90b1ec2b2ace4932893cb23fd6d056a53f75  '"$RUNNER_TEMP/vcpkg.zip" | sha256sum -c -
-          unzip -q "$RUNNER_TEMP/vcpkg.zip" 'vcpkg/installed/x64-windows-static/share/*/vcpkg.spdx.json' -d "$RUNNER_TEMP/cache"
+          unzip -q "$RUNNER_TEMP/vcpkg.zip" 'vcpkg/installed/x64-windows-static/share/*/vcpkg.spdx.json' 'vcpkg/installed/x64-windows-static/share/*/vcpkg_abi_info.txt' -d "$RUNNER_TEMP/cache"
           python3 - <<'PY'
           import json,os,pathlib
           root=pathlib.Path(os.environ['RUNNER_TEMP'])/'cache/vcpkg/installed/x64-windows-static/share'
@@ -21,3 +21,4 @@ jobs:
               data=json.loads(path.read_text())
               print(path.parent.name,[(x.get('name'),x.get('versionInfo')) for x in data.get('packages',[])])
           PY
+          cat "$RUNNER_TEMP/cache/vcpkg/installed/x64-windows-static/share/zlib/vcpkg_abi_info.txt"
