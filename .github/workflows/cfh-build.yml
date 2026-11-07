@@ -1,35 +1,36 @@
-name: CFH PDF Windows source build
+name: CFH PDF dependency reachability investigation
 on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
-  build:
+  investigate:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
+          ref: 824edd8a3f4f7622aa23c85831d5e816cac99b68
           persist-credentials: false
-      - name: Obtain exact upstream dependency archive
+      - name: Inspect candidate references
         shell: pwsh
         run: |
-          $url='https://github.com/qpdf/qpdf/releases/download/v12.4.2/vcpkg.zip'
-          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP\vcpkg.zip"
-          $actual=(Get-FileHash "$env:RUNNER_TEMP\vcpkg.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($actual -ne '82005252fee032135d07c85ad7626a38f26fb253c1e098d1d185f315bea15ebb'){throw 'Upstream dependency archive hash mismatch'}
-          tar -xf "$env:RUNNER_TEMP\vcpkg.zip" -C "$env:GITHUB_WORKSPACE"
-          Get-ChildItem vcpkg\installed -Directory | Select-Object -ExpandProperty Name
-          Get-ChildItem vcpkg\installed -Filter copyright -Recurse | Select-Object -ExpandProperty FullName
-          Get-Content vcpkg\installed\vcpkg\status
-      - name: Configure and build qpdf
+          Write-Output 'Searching qpdf source for affected TurboJPEG loader APIs:'
+          git grep -n -i -E 'tj3LoadImage|tjLoadImage|rdpng' -- ':!*.md' ':!*.json'
+          if($LASTEXITCODE -eq 1){Write-Output 'No direct references in checked-in source'} elseif($LASTEXITCODE -ne 0){throw 'Search failed'}
+          Write-Output 'TurboJPEG and JPEG API references:'
+          git grep -n -i -E 'tj3|turbojpeg|jpeg_Create|jpeg_read' -- libqpdf qpdf CMakeLists.txt
+          if($LASTEXITCODE -gt 1){throw 'Search failed'}
+      - name: Inspect staged Windows executable
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          cmake --preset msvc
-          if($LASTEXITCODE -ne 0){throw 'Configure failed'}
-          cmake --build cmake-build-msvc --config RelWithDebInfo --parallel 2
-          if($LASTEXITCODE -ne 0){throw 'Build failed'}
-          $exe=Get-ChildItem cmake-build-msvc -Filter qpdf.exe -Recurse | Select-Object -First 1
-          if(-not $exe){throw 'qpdf executable missing'}
-          & $exe.FullName --version
-          if($LASTEXITCODE -ne 0){throw 'qpdf did not run'}
+          gh run download 42401786893 --repo clearframeworks/cfh-pdf -n cfh-pdf-engine-and-notices -D "$env:RUNNER_TEMP\stage"
+          if($LASTEXITCODE -ne 0){throw 'Artifact download failed'}
+          & "$env:RUNNER_TEMP\stage\qpdf.exe" --version
+          Get-FileHash "$env:RUNNER_TEMP\stage\qpdf.exe" -Algorithm SHA256 | Format-List
+          $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products '*' -property installationPath
+          $dump=Get-ChildItem "$vs\VC\Tools\MSVC" -Filter dumpbin.exe -Recurse | Where-Object {$_.FullName -match 'Hostx64\\x64'} | Select-Object -First 1
+          & $dump.FullName /IMPORTS "$env:RUNNER_TEMP\stage\qpdf.exe"
