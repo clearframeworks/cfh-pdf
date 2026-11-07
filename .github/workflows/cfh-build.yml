@@ -5,7 +5,7 @@ permissions: {}
 jobs:
   probe:
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 330
     steps:
       - name: Inspect Windows build prerequisites
         shell: pwsh
@@ -32,9 +32,12 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'WSL did not start'}
       - name: Inspect upstream build automation
         shell: pwsh
-        timeout-minutes: 120
+        timeout-minutes: 330
         run: |
           git -c core.autocrlf=false clone --depth 1 https://git.libreoffice.org/lode "$env:RUNNER_TEMP\lode"
+          git -C "$env:RUNNER_TEMP\lode" fetch --depth 1 origin d76638471dd89d978ea1109e40c465194b76abc5
+          git -C "$env:RUNNER_TEMP\lode" checkout --detach d76638471dd89d978ea1109e40c465194b76abc5
+          if($LASTEXITCODE -ne 0){throw 'Pinned LODE checkout failed'}
           if($LASTEXITCODE -ne 0){throw 'LODE clone failed'}
           Get-ChildItem "$env:RUNNER_TEMP\lode" | Select-Object -ExpandProperty Name
           Get-ChildItem "$env:RUNNER_TEMP\lode" -Filter '*readme*' -Recurse | Select-Object -ExpandProperty FullName
@@ -44,10 +47,10 @@ jobs:
         timeout-minutes: 25
         run: |
           $src="$env:RUNNER_TEMP\office-src"
-          git -c core.autocrlf=false clone --depth 1 --branch libreoffice-26.8.2.2 https://github.com/LibreOffice/core.git $src
+          git -c core.autocrlf=false clone --depth 1 --branch cfh-office-26-8-2-2 https://github.com/clearframeworks/cfh-office.git $src
           if($LASTEXITCODE -ne 0){throw 'Office source fetch failed'}
           $head=git -C $src rev-parse HEAD
-          if($head -ne '9dea406ab7695df6325b11b0e19fdca8db4b7276'){throw "Unexpected office source $head"}
+          if($head -ne '1c2586ec890e903a1379ece5351e0e66ad83091d'){throw "Unexpected office source $head"}
           Write-Output "OFFICE SOURCE VERIFIED: $head"
           Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,FreeSpace | Format-Table
       - name: Inspect LODE prerequisite checks
@@ -65,7 +68,7 @@ jobs:
           Invoke-WebRequest 'https://cygwin.com/setup/setup-2.941.x86_64.exe' -OutFile $setup
           if((Get-FileHash $setup -Algorithm SHA512).Hash.ToLowerInvariant() -ne '9bbbd4de497842446af58af875590ace5d8fa3c557cd7e27328569dfa68e58213da1cc1a6fb7102d4f0f01be38e0b92c6fa74f61b6eb7351a0481ca4bd9e8781'){throw 'Cygwin setup checksum mismatch'}
           $root="$env:RUNNER_TEMP\cygwin"; $cache="$env:RUNNER_TEMP\cyg-cache"
-          $p=Start-Process $setup -ArgumentList @('-q','-n','-N','-R',"`"$root`"",'-l',"`"$cache`"",'-s','https://mirrors.kernel.org/sourceware/cygwin/','-P','git,perl,make,wget') -Wait -PassThru
+          $p=Start-Process $setup -ArgumentList @('-q','-n','-N','-R',"`"$root`"",'-l',"`"$cache`"",'-s','https://mirrors.kernel.org/sourceware/cygwin/','-P','git,perl,make,wget,python3,autoconf,automake,libtool,bison,flex,zip,unzip,patch,pkg-config') -Wait -PassThru
           if($p.ExitCode -ne 0){throw "Cygwin setup failed: $($p.ExitCode)"}
           if(!(Test-Path "$root\bin\bash.exe")){throw 'Cygwin bash missing'}
       - name: Check upstream office prerequisites
@@ -81,3 +84,20 @@ jobs:
           & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -lc "cd `"`$RUNNER_TEMP/lode`" && ./setup --dev"
           if($LASTEXITCODE -ne 0){throw "LODE development setup failed: $LASTEXITCODE"}
           Write-Output 'OFFICE DEVELOPMENT ENVIRONMENT PREPARED'
+      - name: Configure and compile CFH Office candidate
+        shell: pwsh
+        timeout-minutes: 240
+        run: |
+          $script=@'
+          set -euo pipefail
+          export LODE_HOME="$(cygpath -u "$RUNNER_TEMP")/lode"
+          export PATH="$LODE_HOME/opt/bin:$PATH"
+          cd "$(cygpath -u "$RUNNER_TEMP")/office-src"
+          printf 'Building Office source: '; git rev-parse HEAD
+          bash cfh-build/configure.sh
+          make -j2
+          '@
+          $script | Set-Content "$env:RUNNER_TEMP\cfh-office-build.sh" -Encoding ascii
+          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" "$env:RUNNER_TEMP\cfh-office-build.sh"
+          if($LASTEXITCODE -ne 0){throw "Office configure/build failed: $LASTEXITCODE"}
+          Write-Output 'CFH OFFICE SOURCE BUILD COMPLETED'
