@@ -80,7 +80,9 @@ jobs:
           if($welcome){throw 'Welcome dialog remained after close click'}
           Write-Output 'FIRST-RUN WELCOME CLOSED'
           Write-Output "Edit foreground request: $([CFHWindow]::SetForegroundWindow([IntPtr]$found.Current.NativeWindowHandle))"
-          $rect=$found.Current.BoundingRectangle
+          $popup=$found.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window))
+          $target=if($popup){$popup}else{$found}
+          $rect=$target.Current.BoundingRectangle
           [CFHWindow]::SetCursorPos([int]($rect.Left+300),[int]($rect.Top+260)) | Out-Null
           [CFHWindow]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [CFHWindow]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
           Start-Sleep -Seconds 1
@@ -95,9 +97,11 @@ jobs:
           '@
           $all=$found.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)
           foreach($el in $all){Write-Output "POST-SAVE UI: $($el.Current.Name) $($el.Current.ControlType.ProgrammaticName) $($el.Current.BoundingRectangle)"}
-          $rect=$found.Current.BoundingRectangle
+          $popup=$found.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window))
+          $target=if($popup){$popup}else{$found}
+          $rect=$target.Current.BoundingRectangle
           $bmp=[Drawing.Bitmap]::new([int]$rect.Width,[int]$rect.Height); $g=[Drawing.Graphics]::FromImage($bmp); $dc=$g.GetHdc()
-          try { $ok=[CFHPrintSave]::PrintWindow([IntPtr]$found.Current.NativeWindowHandle,$dc,2) } finally { $g.ReleaseHdc($dc) }
+          try { $ok=[CFHPrintSave]::PrintWindow([IntPtr]$target.Current.NativeWindowHandle,$dc,2) } finally { $g.ReleaseHdc($dc) }
           if($ok){$bmp.Save("$env:RUNNER_TEMP\post-save.png",[Drawing.Imaging.ImageFormat]::Png)}
           $g.Dispose(); $bmp.Dispose()
           $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
