@@ -20,6 +20,11 @@ jobs:
           z=zipfile.ZipFile(os.path.join(os.environ['RUNNER_TEMP'],'office.zip'))
           names=z.namelist()
           print('TOTAL ARCHIVE ENTRIES',len(names))
+          for n in ('LICENSE.html','NOTICE'):
+              data=z.read(n)
+              print('NOTICE FILE',n,'bytes',len(data),'sha256',__import__('hashlib').sha256(data).hexdigest())
+              for term in ('Mozilla Public License','Apache License','GNU LESSER','MIT License','BSD License'):
+                  print('NOTICE TERM',n,term,term.casefold() in data.decode('utf-8','replace').casefold())
           for title,pattern in [('LICENSE OR NOTICE',r'(^|/)(license|licence|notice|copying|readme)([._/-]|$)'),('WINDOWS RUNTIME',r'(^|/)(vcruntime|msvcp|ucrtbase|api-ms-win).*\.(dll|exe)$'),('EXECUTABLES AND LIBRARIES',r'(^|/)program/[^/]+\.(dll|exe|com)$')]:
               matches=[n for n in names if re.search(pattern,n,re.I)]
               print(title,'COUNT',len(matches))
