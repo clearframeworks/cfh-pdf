@@ -63,12 +63,23 @@ jobs:
           Add-Type @'
           using System;
           using System.Runtime.InteropServices;
-          public static class CFHWindow { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); }
+          public static class CFHWindow {
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+            [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+          }
           '@
           Write-Output "Initial foreground request: $([CFHWindow]::SetForegroundWindow([IntPtr]$found.Current.NativeWindowHandle))"
           [Windows.Forms.SendKeys]::SendWait('{ESC}')
           Start-Sleep -Seconds 2
           Write-Output "Edit foreground request: $([CFHWindow]::SetForegroundWindow([IntPtr]$found.Current.NativeWindowHandle))"
+          $rect=$found.Current.BoundingRectangle
+          Write-Output "Document window bounds: $rect"
+          if($rect.Width -lt 200 -or $rect.Height -lt 200){throw 'Document window bounds too small for a controlled click'}
+          [CFHWindow]::SetCursorPos([int]($rect.Left + $rect.Width * 0.55),[int]($rect.Top + $rect.Height * 0.4)) | Out-Null
+          [CFHWindow]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+          [CFHWindow]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+          Start-Sleep -Seconds 1
           [Windows.Forms.SendKeys]::SendWait('^{END}')
           [Windows.Forms.SendKeys]::SendWait(' CFH_GUI_SAVE_SENTINEL')
           [Windows.Forms.SendKeys]::SendWait('^s')
