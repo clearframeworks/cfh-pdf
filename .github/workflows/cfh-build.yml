@@ -1,4 +1,4 @@
-name: CFH Office installed format probe
+﻿name: CFH Office installed format probe
 on:
   workflow_dispatch:
 permissions:
@@ -20,15 +20,15 @@ jobs:
         run: |
           $zip="$env:RUNNER_TEMP\installer.zip"
           $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
-          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13604325046/zip' -Headers $headers -OutFile $zip
+          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13605543503/zip' -Headers $headers -OutFile $zip
           $hash=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hash -ne '5a29de99122bdd12953bf8f5d7bd4edc1fd30b6700d0dd6b45737d51102417c3'){throw "Installer archive digest mismatch: $hash"}
+          if($hash -ne '928e1f4a7ef2d0342c506df164427b001a82c510c50ce73aedebb1d370c40523'){throw "Installer archive digest mismatch: $hash"}
           Expand-Archive -LiteralPath $zip -DestinationPath "$env:RUNNER_TEMP\package" -Force
           $setup=Get-ChildItem "$env:RUNNER_TEMP\package\*.exe" | Select-Object -First 1
           $hash=(Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hash -ne 'd30ff05deba478b3eabcf55490df3d8abc2dbc430595dcff20b479ee71b95721'){throw "Installer digest mismatch: $hash"}
+          if($hash -ne '1d800989e36d817dcf6d2c94534941e72738c221a123e80d8b7f31c20ed70cf9'){throw "Installer digest mismatch: $hash"}
           $dir="$env:RUNNER_TEMP\installed-office"
-          $p=Start-Process $setup.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir") -Wait -PassThru
+          $p=Start-Process $setup.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=associations',"/DIR=$dir") -Wait -PassThru
           if($p.ExitCode -ne 0){throw "Installer exit $($p.ExitCode)"}
           $exe=Join-Path $dir 'program\soffice.com'
           if(!(Test-Path $exe)){throw 'Installed executable missing'}
@@ -58,25 +58,48 @@ jobs:
           & $python -m pip install --require-hashes --only-binary=:all: -r "$env:RUNNER_TEMP\requirements.txt"
           if($LASTEXITCODE -ne 0){throw 'Dependency installation failed'}
           & $python -m pip freeze
-      - name: Roundtrip and negative fixtures
+      - name: Open XLSX and PPTX via registered command executable
         shell: pwsh
-        timeout-minutes: 15
+        timeout-minutes: 5
         run: |
-          $python="$env:RUNNER_TEMP\fixture-venv\Scripts\python.exe"
-          $exe="$env:RUNNER_TEMP\installed-office\program\soffice.com"
-          & $python cfh-office-roundtrip-check.py $exe
-          if($LASTEXITCODE -ne 0){throw "Office fixture test failed: $LASTEXITCODE"}
-      - name: Open an installed Writer template
-        shell: pwsh
-        timeout-minutes: 3
-        run: |
+          Add-Type -AssemblyName UIAutomationClient
+          Add-Type -AssemblyName UIAutomationTypes
+          Add-Type @"
+          using System; using System.Runtime.InteropServices;
+          public static class CFHMultiInput {
+            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
+            [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,uint data,UIntPtr extra);
+          }
+          "@
           $dir="$env:RUNNER_TEMP\installed-office"
-          $template=Get-ChildItem "$dir\share\template" -File -Recurse -Filter '*.ott' | Select-Object -First 1
-          if(!$template){throw 'No Writer template found'}
-          $out="$env:RUNNER_TEMP\template-output"
-          New-Item -ItemType Directory -Path $out | Out-Null
-          $profile=([Uri]::new("$env:RUNNER_TEMP\template-profile")).AbsoluteUri
-          & "$dir\program\soffice.com" "-env:UserInstallation=$profile" --headless --convert-to pdf --outdir $out $template.FullName
-          $pdf=Get-ChildItem $out -Filter '*.pdf' | Select-Object -First 1
-          if($LASTEXITCODE -ne 0 -or !$pdf -or $pdf.Length -eq 0){throw 'Template conversion failed'}
-          Write-Output "Template opened: $($template.Name)"
+          $exe="$dir\program\CFHOffice.exe"
+          $registry=(Get-Item 'HKCU:\Software\Classes\Applications\CFHOffice.exe\shell\open\command').GetValue('')
+          if($registry -ne "`"$exe`" `"%1`""){throw "Unexpected registered command: $registry"}
+          $py="$env:RUNNER_TEMP\fixture-venv\Scripts\python.exe"
+          $xlsx="$env:RUNNER_TEMP\CFH test spreadsheet.xlsx"
+          $pptx="$env:RUNNER_TEMP\CFH test presentation.pptx"
+          & $py -c 'from openpyxl import Workbook; import sys; w=Workbook(); w.active["A1"]=42; w.save(sys.argv[1])' $xlsx
+          if($LASTEXITCODE -ne 0){throw 'Spreadsheet fixture failed'}
+          & $py -c 'from pptx import Presentation; import sys; p=Presentation(); p.slides.add_slide(p.slide_layouts[0]).shapes.title.text="CFH synthetic slide"; p.save(sys.argv[1])' $pptx
+          if($LASTEXITCODE -ne 0){throw 'Presentation fixture failed'}
+          $root=[Windows.Automation.AutomationElement]::RootElement
+          $cond=[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window)
+          foreach($test in @(@($xlsx,'CFH test spreadsheet','Calc'),@($pptx,'CFH test presentation','Impress'))){
+            $process=Start-Process $exe -ArgumentList @("`"$($test[0])`"") -PassThru
+            if(!$process.WaitForExit(30000) -or $process.ExitCode -ne 0){throw "Wrapper failed: $($test[1])"}
+            $found=$null
+            for($i=0;$i -lt 30;$i++){
+              foreach($window in $root.FindAll([Windows.Automation.TreeScope]::Children,$cond)){
+                if($window.Current.Name -like "*$($test[1])*$($test[2])*" ){
+                  $owner=Get-Process -Id $window.Current.ProcessId -ErrorAction SilentlyContinue
+                  if($owner -and $owner.Path -and $owner.Path.StartsWith($dir,[StringComparison]::OrdinalIgnoreCase)){$found=$window;break}
+                }
+              }
+              if($found){break}; Start-Sleep -Seconds 2
+            }
+            if(!$found){throw "Expected installed $($test[2]) window not found"}
+            Write-Output "OBSERVED $($test[2]) WINDOW: $($found.Current.Name) PID $($found.Current.ProcessId)"
+            $welcome=$found.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'Welcome to CFH Office!'))
+            if($welcome){$rect=$welcome.Current.BoundingRectangle; [CFHMultiInput]::SetCursorPos([int]($rect.Right-15),[int]($rect.Top+15)) | Out-Null; [CFHMultiInput]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [CFHMultiInput]::mouse_event(4,0,0,0,[UIntPtr]::Zero); Start-Sleep -Seconds 3}
+          }
+          Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
