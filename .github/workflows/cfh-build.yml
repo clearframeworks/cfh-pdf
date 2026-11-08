@@ -70,7 +70,9 @@ jobs:
           }
           '@
           [CFHClick]::SetForegroundWindow([IntPtr]$found.Current.NativeWindowHandle) | Out-Null
-          $rect=$found.Current.BoundingRectangle
+          $welcome=$found.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'Welcome to CFH Office!'))
+          if(!$welcome){throw 'Expected welcome child not found'}
+          $rect=$welcome.Current.BoundingRectangle
           [CFHClick]::SetCursorPos([int]($rect.Left+300),[int]($rect.Top+260)) | Out-Null
           [CFHClick]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
           [CFHClick]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
@@ -93,7 +95,7 @@ jobs:
           $rect=$found.Current.BoundingRectangle
           $bmp=[Drawing.Bitmap]::new([int]$rect.Width,[int]$rect.Height)
           $g=[Drawing.Graphics]::FromImage($bmp); $dc=$g.GetHdc()
-          try { $ok=[CFHPrint]::PrintWindow([IntPtr]$found.Current.NativeWindowHandle,$dc,2) } finally { $g.ReleaseHdc($dc) }
+          try { $ok=[CFHPrint]::PrintWindow([IntPtr]$welcome.Current.NativeWindowHandle,$dc,2) } finally { $g.ReleaseHdc($dc) }
           Write-Output "PRINT WINDOW: $ok"
           if(!$ok){throw 'PrintWindow failed'}
           $bmp.Save("$env:RUNNER_TEMP\office-window.png",[Drawing.Imaging.ImageFormat]::Png)
