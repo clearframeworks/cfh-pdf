@@ -58,6 +58,7 @@ jobs:
           Write-Output "Named elements: $(($names | Select-Object -First 50) -join ' | ')"
           if($names -match '(?i)donate'){throw 'Visible donation control found in fresh profile'}
           Write-Output 'Donation check limited to exposed UI elements; unopened menus remain unverified.'
+          Start-Sleep -Seconds 20
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type @'
           using System;
@@ -72,6 +73,8 @@ jobs:
           [Windows.Forms.SendKeys]::SendWait(' CFH_GUI_SAVE_SENTINEL')
           [Windows.Forms.SendKeys]::SendWait('^s')
           Start-Sleep -Seconds 4
+          $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
+          foreach($window in $windows){Write-Output "PRE-CLOSE WINDOW: $($window.Current.Name) PID $($window.Current.ProcessId)"}
           Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
           Start-Sleep -Seconds 2
           $saved=[IO.File]::ReadAllText($file)
