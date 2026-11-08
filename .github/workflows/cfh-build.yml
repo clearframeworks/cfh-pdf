@@ -52,9 +52,12 @@ jobs:
           dirs=sorted(x['path'] for x in tree['tree'] if x['type']=='tree')
           missing=[d for d in dirs if not re.search(re.escape(d),text,re.I)]
           print('EXTERNAL DIRECTORY NAMES',len(dirs),'NOT TEXTUALLY MATCHED',len(missing))
-          for d in missing: print('UNMATCHED NAME',d)
+          for d in missing:
+              matching=[n for n in z.namelist() if re.search(re.escape(d),n,re.I)]
+              print('UNMATCHED NAME',d,'ARCHIVE PATH MATCHES',len(matching),'EXAMPLES',matching[:4])
           for name in ['libxml2','zlib','OpenSSL','ICU','libpng','libjpeg','Python','Mozilla Public License']:
               print('NOTICE MATCH',name, bool(re.search(re.escape(name),text,re.I)))
           PY
+
 
 
