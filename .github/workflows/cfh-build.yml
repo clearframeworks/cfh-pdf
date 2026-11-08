@@ -122,24 +122,34 @@ jobs:
               end;
             end;
           end;
-          procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+          procedure RemoveOwnedRegistration();
           var Owner, Value, Key, Types, Cmd: String; I: Integer;
               Ext: array[0..5] of String;
           begin
-            if CurUninstallStep <> usUninstall then exit;
+
             Key := 'Software\Classes\Applications\CFHOffice.exe';
             if not RegQueryStringValue(HKCU, Key, 'CFHOwner', Owner) then exit;
             if Owner <> 'CFHOffice-4ec9d1ca' then exit;
+            Cmd := Key + '\shell\open\command';
+            if not RegQueryStringValue(HKCU, Cmd, '', Value) then exit;
+            if Value <> '"' + ExpandConstant('{app}\program\CFHOffice.exe') + '" "%1"' then exit;
             Types := Key + '\SupportedTypes';
             Ext[0]:='.docx'; Ext[1]:='.odt'; Ext[2]:='.xlsx'; Ext[3]:='.ods'; Ext[4]:='.pptx'; Ext[5]:='.odp';
             for I := 0 to 5 do
               if RegQueryStringValue(HKCU, Types, Ext[I], Value) and (Value = '') then RegDeleteValue(HKCU, Types, Ext[I]);
-            Cmd := Key + '\shell\open\command';
             if RegQueryStringValue(HKCU, Cmd, '', Value) and (Value = '"' + ExpandConstant('{app}\program\CFHOffice.exe') + '" "%1"') then RegDeleteValue(HKCU, Cmd, '');
             if RegQueryStringValue(HKCU, Key, 'FriendlyAppName', Value) and (Value = 'CFH Office') then RegDeleteValue(HKCU, Key, 'FriendlyAppName');
             if RegQueryStringValue(HKCU, Key, 'CFHOwner', Value) and (Value = 'CFHOffice-4ec9d1ca') then RegDeleteValue(HKCU, Key, 'CFHOwner');
             RegDeleteKeyIfEmpty(HKCU, Types); RegDeleteKeyIfEmpty(HKCU, Cmd);
             RegDeleteKeyIfEmpty(HKCU, Key + '\shell\open'); RegDeleteKeyIfEmpty(HKCU, Key + '\shell'); RegDeleteKeyIfEmpty(HKCU, Key);
+          end;
+          procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+          begin
+            if CurUninstallStep = usUninstall then RemoveOwnedRegistration();
+          end;
+          procedure CurStepChanged(CurStep: TSetupStep);
+          begin
+            if (CurStep = ssInstall) and (not IsTaskSelected('associations')) then RemoveOwnedRegistration();
           end;
           '@
           $recipe=$recipe.Replace('SOURCE_DIR',"$env:RUNNER_TEMP\office").Replace('OUTPUT_DIR',"$env:RUNNER_TEMP\out").Replace('LAUNCHER_PATH',"$env:RUNNER_TEMP\CFHOffice.exe")
@@ -208,6 +218,12 @@ jobs:
           $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=associations',"/DIR=$dir") -Wait -PassThru
           if($p.ExitCode -ne 0){throw "Same-installation upgrade failed: $($p.ExitCode)"}
           Write-Output 'Same-installation opt-in upgrade succeeded'
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=',"/DIR=$dir") -Wait -PassThru
+          if($p.ExitCode -ne 0 -or (Test-Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe')){throw 'Opt-in to opt-out upgrade failed'}
+          Write-Output 'Opt-in to opt-out upgrade removed owned registration'
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=associations',"/DIR=$dir") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'Opt-out to opt-in upgrade failed'}
+          Write-Output 'Opt-out to opt-in upgrade succeeded'
           New-ItemProperty -Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe' -Name 'CFHProbeForeignValue' -Value 'preserve' | Out-Null
           Set-ItemProperty -Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe' -Name 'FriendlyAppName' -Value 'Changed by another actor'
           Set-ItemProperty -Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe\SupportedTypes' -Name '.docx' -Value 'changed'
@@ -223,7 +239,7 @@ jobs:
           if($p.ExitCode -ne 0 -or (Test-Path (Join-Path $dir 'program\soffice.com'))){throw "Uninstall failed: $($p.ExitCode)"}
           foreach($ext in @('.odt','.xlsx','.ods','.pptx','.odp')){
             $key='HKCU:\Software\Classes\Applications\CFHOffice.exe\SupportedTypes'
-            if((Test-Path $key) -and ((Get-Item $key).GetValueNames() -contains $ext)){throw "Open With registration remains: $ext"}
+            if(!(Test-Path $key) -or ((Get-Item $key).GetValueNames() -notcontains $ext)){throw "Modified registration was not preserved: $ext"}
           }
           $appKey='HKCU:\Software\Classes\Applications\CFHOffice.exe'
           if((Get-ItemProperty -Path $appKey -Name CFHProbeForeignValue -ErrorAction Stop).CFHProbeForeignValue -ne 'preserve'){throw 'Uninstall removed unrelated registry value'}
