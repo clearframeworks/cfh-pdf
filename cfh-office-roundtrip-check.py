@@ -69,7 +69,8 @@ def main():
             assert any(title in shape.text for shape in slide.shapes if shape.has_text_frame)
         assert all(digest(p) == h for p, h in original.items())
         bad = inputs / 'malformed.docx'
-        bad.write_bytes(b'not an office document')
+        # A truncated ZIP local-file header cannot be treated as plain text OOXML.
+        bad.write_bytes(b'PK\x03\x04\x14\x00\x00\x00\x08\x00')
         run(exe, profile, bad, 'odt', middle, expected=False)
         # A regular file in place of a directory is reliably unusable, even for admins.
         blocked = root / 'not-a-directory'
