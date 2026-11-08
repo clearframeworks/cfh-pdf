@@ -17,4 +17,4 @@ jobs:
           unzip -q "$RUNNER_TEMP/popup.zip" -d "$RUNNER_TEMP/popup"
           sudo apt-get update -qq
           sudo apt-get install -y -qq tesseract-ocr
-          find "$RUNNER_TEMP/popup" -type f -name '*.png' -exec tesseract {} stdout \; 2>/dev/null
+          find "$RUNNER_TEMP/popup" -type f -name '*.png' -exec tesseract {} stdout tsv \; 2>/dev/null
