@@ -131,13 +131,17 @@ jobs:
           if($templates.Count -eq 0){throw 'Installed template inventory is empty'}
           Write-Output "Installed template files: $($templates.Count)"
           $expected=@{'.docx'='CFHOffice.Writer';'.odt'='CFHOffice.Writer';'.xlsx'='CFHOffice.Calc';'.ods'='CFHOffice.Calc';'.pptx'='CFHOffice.Impress';'.odp'='CFHOffice.Impress'}
+          $changed=@()
           foreach($ext in $expected.Keys){
             $key="HKCU:\Software\Classes\$ext\OpenWithProgids"
             if((Get-Item $key -ErrorAction Stop).GetValueNames() -notcontains $expected[$ext]){throw "Open With registration missing: $ext"}
             $choice="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$ext\UserChoice"
             if((Get-ItemProperty -LiteralPath $choice -Name ProgId -ErrorAction SilentlyContinue).ProgId -ne $defaults[$ext]){throw "Default association changed: $ext"}
-            if([CFHAssoc]::Executable($ext) -ne $effective[$ext]){throw "Effective default changed: $ext"}
+            $after=[CFHAssoc]::Executable($ext)
+            Write-Output "ASSOCIATION $ext before=$($effective[$ext]) after=$after"
+            if($after -ne $effective[$ext]){$changed += $ext}
           }
+          if($changed.Count -gt 0){throw "Effective defaults changed: $($changed -join ', ')"}
           Write-Output 'Optional Open With registrations present; existing user defaults unchanged'
       - name: Uninstall probe
         shell: pwsh
