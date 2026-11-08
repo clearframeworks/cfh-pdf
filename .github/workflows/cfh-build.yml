@@ -35,7 +35,7 @@ jobs:
           $file="$env:RUNNER_TEMP\CFH UI fixture with spaces.txt"
           [IO.File]::WriteAllText($file,'CFH synthetic GUI fixture',[Text.Encoding]::UTF8)
           $profile=([Uri]::new("$env:RUNNER_TEMP\fresh-ui-profile")).AbsoluteUri
-          Start-Process $exe -ArgumentList @("-env:UserInstallation=$profile",'--writer',"`"$file`"") | Out-Null
+          $launched=Start-Process $exe -ArgumentList @("-env:UserInstallation=$profile",'--writer',"`"$file`"") -PassThru
           $root=[Windows.Automation.AutomationElement]::RootElement
           $condition=[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window)
           $found=$null
@@ -50,7 +50,13 @@ jobs:
             if($found){break}
             Start-Sleep -Seconds 2
           }
-          if(!$found){throw 'Synthetic document window was not observed via UI Automation'}
+          if(!$found){
+            $launched.Refresh(); Write-Output "LAUNCHER EXITED: $($launched.HasExited)"
+            if($launched.HasExited){Write-Output "LAUNCHER EXIT CODE: $($launched.ExitCode)"}
+            foreach($window in $root.FindAll([Windows.Automation.TreeScope]::Children,$condition)){Write-Output "WINDOW: $($window.Current.Name) PID $($window.Current.ProcessId)"}
+            Get-Process CFHOffice,soffice* -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,Path,MainWindowTitle | Format-List
+            throw 'Synthetic document window was not observed via UI Automation'
+          }
           Write-Output "OBSERVED DOCUMENT WINDOW: $($found.Current.Name); PID: $($found.Current.ProcessId); EXE: $((Get-Process -Id $found.Current.ProcessId).Path)"
           $items=$found.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)
           $names=@(foreach($item in $items){if($item.Current.Name){$item.Current.Name}})
