@@ -43,6 +43,15 @@ jobs:
           print('LICENSE HEADINGS',len(headings))
           for h in headings:
               print('HEADING',html.unescape(re.sub('<[^>]*>',' ',h)).strip())
+          import json,urllib.request
+          req=urllib.request.Request('https://api.github.com/repos/clearframeworks/cfh-office/git/trees/4f58d63d6beea882e8743564f58fcdaa2c26cb81?recursive=1',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          tree=json.load(urllib.request.urlopen(req))
+          if tree.get('truncated'): raise RuntimeError('Source tree inventory truncated')
+          dirs=sorted({x['path'].split('/')[1] for x in tree['tree'] if x['path'].startswith('external/') and len(x['path'].split('/'))>1})
+          missing=[d for d in dirs if not re.search(re.escape(d),text,re.I)]
+          print('EXTERNAL DIRECTORY NAMES',len(dirs),'NOT TEXTUALLY MATCHED',len(missing))
+          for d in missing: print('UNMATCHED NAME',d)
           for name in ['libxml2','zlib','OpenSSL','ICU','libpng','libjpeg','Python','Mozilla Public License']:
               print('NOTICE MATCH',name, bool(re.search(re.escape(name),text,re.I)))
           PY
+
