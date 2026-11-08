@@ -55,9 +55,10 @@ jobs:
           for d in missing:
               matching=[n for n in z.namelist() if re.search(re.escape(d),n,re.I)]
               print('UNMATCHED NAME',d,'ARCHIVE PATH MATCHES',len(matching),'EXAMPLES',matching[:4])
-          for name in ['libxml2','zlib','OpenSSL','ICU','libpng','libjpeg','Python','Mozilla Public License']:
+          for name in ['libxml2','zlib','OpenSSL','ICU','libpng','libjpeg','Python','Mozilla Public License','gpgme','GnuPG','Java-WebSocket','Java WebSocket','SQLite']:
               print('NOTICE MATCH',name, bool(re.search(re.escape(name),text,re.I)))
           PY
+
 
 
 
