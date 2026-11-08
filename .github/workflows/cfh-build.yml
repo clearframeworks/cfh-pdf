@@ -34,7 +34,7 @@ jobs:
           $rights=[Security.AccessControl.RegistryRights]::ReadPermissions -bor [Security.AccessControl.RegistryRights]::ChangePermissions
           $reg=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($sub,[Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,$rights)
           if(-not $reg){throw 'Cannot open registry key for ACL control'}
-          $original=$reg.GetAccessControl()
+          $originalSddl=$reg.GetAccessControl().Sddl
           $denied=$reg.GetAccessControl()
           $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
           $rule=[Security.AccessControl.RegistryAccessRule]::new($sid,[Security.AccessControl.RegistryRights]::SetValue,[Security.AccessControl.AccessControlType]::Deny)
@@ -59,7 +59,7 @@ jobs:
             $failure=$_
             Write-Output "Denial test error: $failure"
           } finally {
-            $reg.SetAccessControl($original); if($reg.GetAccessControl().Sddl -ne $original.Sddl){throw 'Registry ACL restoration mismatch'}; $reg.Close(); Write-Output 'Original registry ACL restored'
+            $restore=[Security.AccessControl.RegistrySecurity]::new(); $restore.SetSecurityDescriptorSddlForm($originalSddl); $reg.SetAccessControl($restore); $reg.Close(); $verify=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($sub,[Microsoft.Win32.RegistryKeyPermissionCheck]::ReadSubTree,[Security.AccessControl.RegistryRights]::ReadPermissions); if($verify.GetAccessControl().Sddl -ne $originalSddl){throw 'Registry ACL restoration mismatch'}; $verify.Close(); Write-Output 'Original registry ACL restored'
           }
           New-ItemProperty -LiteralPath $key -Name 'CFHRestoreProbe' -Value 'test' -ErrorAction Stop | Out-Null
           Remove-ItemProperty -LiteralPath $key -Name 'CFHRestoreProbe' -ErrorAction Stop
@@ -71,6 +71,7 @@ jobs:
           if(Test-Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe'){throw 'Owned registration remains after recovery'}
           Write-Output 'Uninstall completed after restoring registry access'
           if($failure){throw $failure}
+
 
 
 
