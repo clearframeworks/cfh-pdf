@@ -79,14 +79,15 @@ jobs:
           [Tasks]
           Name: associations; Description: "Add CFH Office to Open with for common document formats"; Flags: unchecked
           [Registry]
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "CFH Office"; Flags: uninsdeletekey; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\shell\open\command"; ValueType: string; ValueData: """{app}\program\CFHOffice.exe"" ""%1"""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".docx"; ValueData: ""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".odt"; ValueData: ""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".xlsx"; ValueData: ""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".ods"; ValueData: ""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".pptx"; ValueData: ""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".odp"; ValueData: ""; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "CFH Office"; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe"; ValueType: string; ValueName: "CFHOwner"; ValueData: "CFHOffice-4ec9d1ca"; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\shell\open\command"; ValueType: string; ValueData: """{app}\program\CFHOffice.exe"" ""%1"""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".docx"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".odt"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".xlsx"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".ods"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".pptx"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".odp"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associations
           [Code]
           function InitializeSetup(): Boolean;
           var Installed, Major, Minor, Build: Cardinal;
@@ -107,12 +108,19 @@ jobs:
             end;
           end;
           function PrepareToInstall(var NeedsRestart: Boolean): String;
+          var Owner, Command: String;
           begin
             Result := '';
-            if IsTaskSelected('associations') and
-               (RegKeyExists(HKCU, 'Software\Classes\Applications\CFHOffice.exe') or
-                RegKeyExists(HKLM, 'Software\Classes\Applications\CFHOffice.exe')) then
-              Result := 'An existing CFH Office file-handler registration was found. Clear it or install without the Open with option.';
+            if IsTaskSelected('associations') then begin
+              if RegKeyExists(HKLM, 'Software\Classes\Applications\CFHOffice.exe') then
+                Result := 'An existing system-wide CFH Office file-handler registration was found.'
+              else if RegKeyExists(HKCU, 'Software\Classes\Applications\CFHOffice.exe') then begin
+                if not RegQueryStringValue(HKCU, 'Software\Classes\Applications\CFHOffice.exe', 'CFHOwner', Owner) then Owner := '';
+                if not RegQueryStringValue(HKCU, 'Software\Classes\Applications\CFHOffice.exe\shell\open\command', '', Command) then Command := '';
+                if (Owner <> 'CFHOffice-4ec9d1ca') or (Command <> '"' + ExpandConstant('{app}\program\CFHOffice.exe') + '" "%1"') then
+                  Result := 'An existing CFH Office file-handler registration belongs to another installation.';
+              end;
+            end;
           end;
           '@
           $recipe=$recipe.Replace('SOURCE_DIR',"$env:RUNNER_TEMP\office").Replace('OUTPUT_DIR',"$env:RUNNER_TEMP\out").Replace('LAUNCHER_PATH',"$env:RUNNER_TEMP\CFHOffice.exe")
@@ -178,6 +186,10 @@ jobs:
           }
           if($changed.Count -gt 0){throw "Effective defaults changed: $($changed -join ', ')"}
           Write-Output 'Optional Open With registrations present; existing user defaults unchanged'
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=associations',"/DIR=$dir") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw "Same-installation upgrade failed: $($p.ExitCode)"}
+          Write-Output 'Same-installation opt-in upgrade succeeded'
+          New-ItemProperty -Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe' -Name 'CFHProbeForeignValue' -Value 'preserve' | Out-Null
       - name: Uninstall probe
         shell: pwsh
         timeout-minutes: 10
@@ -191,6 +203,9 @@ jobs:
             $key='HKCU:\Software\Classes\Applications\CFHOffice.exe\SupportedTypes'
             if((Test-Path $key) -and ((Get-Item $key).GetValueNames() -contains $ext)){throw "Open With registration remains: $ext"}
           }
+          $appKey='HKCU:\Software\Classes\Applications\CFHOffice.exe'
+          if((Get-ItemProperty -Path $appKey -Name CFHProbeForeignValue -ErrorAction Stop).CFHProbeForeignValue -ne 'preserve'){throw 'Uninstall removed unrelated registry value'}
+          Write-Output 'Unrelated application registry value preserved'
           Write-Output 'Installed executable removed by uninstaller'
       - name: Retain experimental installer
         if: ${{ always() }}
