@@ -211,7 +211,7 @@ jobs:
           New-ItemProperty -Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe' -Name 'CFHProbeForeignValue' -Value 'preserve' | Out-Null
           Set-ItemProperty -Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe' -Name 'FriendlyAppName' -Value 'Changed by another actor'
           Set-ItemProperty -Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe\SupportedTypes' -Name '.docx' -Value 'changed'
-          (Get-Item 'HKCU:\Software\Classes\Applications\CFHOffice.exe\shell\open\command').SetValue('', 'changed-command')
+          Set-Item -LiteralPath 'HKCU:\Software\Classes\Applications\CFHOffice.exe\shell\open\command' -Value 'changed-command'
       - name: Uninstall probe
         shell: pwsh
         timeout-minutes: 10
