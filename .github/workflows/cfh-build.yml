@@ -1,157 +1,80 @@
-name: Office Windows build environment preflight
+name: CFH Office installer probe
 on:
   workflow_dispatch:
-permissions: {}
+permissions:
+  actions: read
+  contents: read
 jobs:
-  probe:
+  installer:
     runs-on: windows-2022
-    timeout-minutes: 330
+    timeout-minutes: 90
     steps:
-      - name: Inspect Windows build prerequisites
+      - name: Fetch exact build artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip="$env:RUNNER_TEMP\office.zip"
+          $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
+          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13603618108/zip' -Headers $headers -OutFile $zip
+          $hash=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($hash -ne '959e433c61c13e2c72c85dd927a6d98200de9797c82a384c39e5942493b07391'){throw "Build artifact digest mismatch: $hash"}
+          Expand-Archive -LiteralPath $zip -DestinationPath "$env:RUNNER_TEMP\office" -Force
+          $exe="$env:RUNNER_TEMP\office\program\soffice.com"
+          if(!(Test-Path $exe)){throw 'Expected built console executable not found'}
+          $version=& $exe --version
+          if($LASTEXITCODE -ne 0 -or ($version -join ' ') -notmatch 'CFH Office 26\.8\.2\.2 4f58d63d6beea882e8743564f58fcdaa2c26cb81'){throw "Unexpected built version: $version"}
+          Write-Output "Built version: $version"
+      - name: Package installer
         shell: pwsh
         run: |
-          Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,Size,FreeSpace | Format-Table
-          Get-ComputerInfo | Select-Object WindowsProductName,WindowsVersion,OsArchitecture
-          $wsl=Get-Command wsl.exe -ErrorAction SilentlyContinue
-          if($wsl) { Write-Output "WSL command: $($wsl.Source)"; & $wsl.Source --status; Write-Output "WSL status exit: $LASTEXITCODE" } else { Write-Output 'WSL command unavailable' }
-          cmd /c "wsl --list --verbose > %TEMP%\cfh-wsl.txt 2>&1"
-          [IO.File]::ReadAllText("$env:TEMP\cfh-wsl.txt",[Text.Encoding]::Unicode) | Write-Output
-          $vs=& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -all -products '*' -property installationPath
-          Write-Output "Visual Studio: $vs"
-      - name: Probe WSL1 with verified Ubuntu image
-        shell: pwsh
-        timeout-minutes: 8
-        run: |
-          $url='https://cloud-images.ubuntu.com/wsl/releases/noble/current/ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz'
-          $file="$env:RUNNER_TEMP\ubuntu-rootfs.tar.gz"
-          Invoke-WebRequest $url -OutFile $file
-          if((Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() -ne '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934'){throw 'Ubuntu image checksum mismatch'}
-          wsl.exe --import CFHProbe "$env:RUNNER_TEMP\wsl-probe" $file --version 1
-          if($LASTEXITCODE -ne 0){throw "WSL1 import failed: $LASTEXITCODE"}
-          wsl.exe -d CFHProbe -- /bin/sh -c 'uname -a; cat /etc/os-release'
-          if($LASTEXITCODE -ne 0){throw 'WSL did not start'}
-      - name: Inspect upstream build automation
-        shell: pwsh
-        timeout-minutes: 330
-        run: |
-          git -c core.autocrlf=false clone --depth 1 https://git.libreoffice.org/lode "$env:RUNNER_TEMP\lode"
-          git -C "$env:RUNNER_TEMP\lode" fetch --depth 1 origin d76638471dd89d978ea1109e40c465194b76abc5
-          git -C "$env:RUNNER_TEMP\lode" checkout --detach d76638471dd89d978ea1109e40c465194b76abc5
-          if($LASTEXITCODE -ne 0){throw 'Pinned LODE checkout failed'}
-          if($LASTEXITCODE -ne 0){throw 'LODE clone failed'}
-          Get-ChildItem "$env:RUNNER_TEMP\lode" | Select-Object -ExpandProperty Name
-          Get-ChildItem "$env:RUNNER_TEMP\lode" -Filter '*readme*' -Recurse | Select-Object -ExpandProperty FullName
-          Get-ChildItem "$env:RUNNER_TEMP\lode" -File | Where-Object { $_.Name -match 'README|setup' } | ForEach-Object { Get-Content $_.FullName -TotalCount 150 }
-      - name: Fetch pinned office source in isolated runner
-        shell: pwsh
-        timeout-minutes: 25
-        run: |
-          $src="$env:RUNNER_TEMP\office-src"
-          git -c core.autocrlf=false clone --depth 1 --branch cfh-office-26-8-2-2 https://github.com/clearframeworks/cfh-office.git $src
-          if($LASTEXITCODE -ne 0){throw 'Office source fetch failed'}
-          $head=git -C $src rev-parse HEAD
-          if($head -ne '4f58d63d6beea882e8743564f58fcdaa2c26cb81'){throw "Unexpected office source $head"}
-          Write-Output "OFFICE SOURCE VERIFIED: $head"
-          Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,FreeSpace | Format-Table
-      - name: Inspect LODE prerequisite checks
-        shell: pwsh
-        timeout-minutes: 5
-        run: |
-          $lode="$env:RUNNER_TEMP\lode"
-          & "$env:ProgramFiles\Git\bin\bash.exe" -lc "cd `"`$RUNNER_TEMP/lode`" && ./setup --help"
-          if($LASTEXITCODE -ne 0){throw 'LODE help failed'}
-      - name: Install Cygwin on disposable runner
-        shell: pwsh
-        timeout-minutes: 15
-        run: |
-          $setup="$env:RUNNER_TEMP\cygwin-setup.exe"
-          Invoke-WebRequest 'https://cygwin.com/setup/setup-2.941.x86_64.exe' -OutFile $setup
-          if((Get-FileHash $setup -Algorithm SHA512).Hash.ToLowerInvariant() -ne '9bbbd4de497842446af58af875590ace5d8fa3c557cd7e27328569dfa68e58213da1cc1a6fb7102d4f0f01be38e0b92c6fa74f61b6eb7351a0481ca4bd9e8781'){throw 'Cygwin setup checksum mismatch'}
-          $root="$env:RUNNER_TEMP\cygwin"; $cache="$env:RUNNER_TEMP\cyg-cache"
-          $p=Start-Process $setup -ArgumentList @('-q','-n','-N','-R',"`"$root`"",'-l',"`"$cache`"",'-s','https://mirrors.kernel.org/sourceware/cygwin/','-P','git,perl,make,wget,python3,autoconf,automake,libtool,bison,flex,gperf,zip,unzip,patch,pkg-config') -Wait -PassThru
-          if($p.ExitCode -ne 0){throw "Cygwin setup failed: $($p.ExitCode)"}
-          if(!(Test-Path "$root\bin\bash.exe")){throw 'Cygwin bash missing'}
-      - name: Check upstream office prerequisites
+          $iscc="${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if(!(Test-Path $iscc)){throw 'Inno Setup unavailable on runner'}
+          $recipe=@'
+          #define AppName "CFH Office"
+          [Setup]
+          AppId={{B94D8A10-7932-4DE1-8C83-583AD60C2B88}
+          AppName={#AppName}
+          AppVersion=26.8.2.2
+          AppPublisher=Coders for Humanity
+          DefaultDirName={autopf}\CFH Office
+          DefaultGroupName=CFH Office
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          Compression=lzma2/fast
+          SolidCompression=yes
+          OutputDir=OUTPUT_DIR
+          OutputBaseFilename=CFH-Office-26.8.2.2-setup
+          UninstallDisplayIcon={app}\program\soffice.exe
+          [Files]
+          Source: "SOURCE_DIR\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+          [Icons]
+          Name: "{autoprograms}\CFH Office"; Filename: "{app}\program\soffice.exe"
+          '@
+          $recipe=$recipe.Replace('SOURCE_DIR',"$env:RUNNER_TEMP\office").Replace('OUTPUT_DIR',"$env:RUNNER_TEMP\out")
+          [IO.File]::WriteAllText("$env:RUNNER_TEMP\office.iss",$recipe,[Text.Encoding]::UTF8)
+          & $iscc "$env:RUNNER_TEMP\office.iss"
+          if($LASTEXITCODE -ne 0){throw "Installer build failed: $LASTEXITCODE"}
+          $installer=Get-Item "$env:RUNNER_TEMP\out\CFH-Office-26.8.2.2-setup.exe"
+          Write-Output "INSTALLER SHA256: $((Get-FileHash $installer -Algorithm SHA256).Hash)"
+      - name: Install and smoke test
         shell: pwsh
         timeout-minutes: 10
         run: |
-          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -c 'set -e; export PATH="/usr/bin:$PATH"; command -v autoconf; command -v aclocal; command -v gperf; p=$(/usr/bin/cygpath -u "$RUNNER_TEMP"); test -d "$p/office-src" && test -d "$p/lode" && printf "CYGWIN PATH CHECK OK: %s\n" "$p"'
-          if($LASTEXITCODE -ne 0){throw 'Cygwin source path preflight failed'}
-          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -lc "cd `"`$RUNNER_TEMP/lode`" && ./setup --prereq"
-          if($LASTEXITCODE -ne 0){throw "LODE prerequisite check failed: $LASTEXITCODE"}
-      - name: Prepare upstream office development environment
-        shell: pwsh
-        timeout-minutes: 60
-        run: |
-          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" -lc "cd `"`$RUNNER_TEMP/lode`" && LODE_NO_CLONE=1 ./setup --dev"
-          if($LASTEXITCODE -ne 0){throw "LODE development setup failed: $LASTEXITCODE"}
-          Write-Output 'OFFICE DEVELOPMENT ENVIRONMENT PREPARED'
-      - name: Configure CFH Office candidate
-        shell: pwsh
-        timeout-minutes: 20
-        run: |
-          if(-not $env:JAVA_HOME_17_X64 -or -not (Test-Path "$env:JAVA_HOME_17_X64\bin\javac.exe")){throw '64-bit JDK 17 not found'}
-          $env:JAVA_HOME=$env:JAVA_HOME_17_X64
-          $script=@'
-          set -euo pipefail
-          export LODE_HOME="$(/usr/bin/cygpath -u "$RUNNER_TEMP")/lode"
-          export PATH="/usr/bin:$LODE_HOME/opt/bin:$PATH"
-          cd "$(/usr/bin/cygpath -u "$RUNNER_TEMP")/office-src"
-          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$PWD"
-          printf 'Building Office source: '; git rev-parse HEAD
-          bash cfh-build/configure.sh --with-visual-studio=2022 --with-jdk-home="$(/usr/bin/cygpath -u "$JAVA_HOME")"
-          '@
-          [IO.File]::WriteAllText("$env:RUNNER_TEMP\cfh-office-configure.sh", $script.Replace("`r`n", "`n"), [Text.Encoding]::ASCII)
-          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" "$env:RUNNER_TEMP\cfh-office-configure.sh"
-          if($LASTEXITCODE -ne 0){throw "Office configure failed: $LASTEXITCODE"}
-      - name: Capture exact source transformation
-        shell: pwsh
-        run: |
-          $src="$env:RUNNER_TEMP\office-src"
-          $patch="$env:RUNNER_TEMP\cfh-office-built-source.patch"
-          git -c "safe.directory=$src" -C $src diff --binary "--output=$patch"
-          if($LASTEXITCODE -ne 0 -or !(Test-Path $patch) -or (Get-Item $patch).Length -eq 0){throw 'Source patch capture failed'}
-          Write-Output "TRANSFORM SHA256: $((Get-FileHash $patch -Algorithm SHA256).Hash)"
-      - name: Retain exact source transformation
+          $installer="$env:RUNNER_TEMP\out\CFH-Office-26.8.2.2-setup.exe"
+          $dir="$env:RUNNER_TEMP\installed-office"
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir") -Wait -PassThru
+          if($p.ExitCode -ne 0){throw "Installer exit $($p.ExitCode)"}
+          $exe=Join-Path $dir 'program\soffice.com'
+          if(!(Test-Path $exe)){throw 'Installed console executable missing'}
+          $version=& $exe --version
+          if($LASTEXITCODE -ne 0 -or ($version -join ' ') -notmatch 'CFH Office 26\.8\.2\.2 4f58d63d6beea882e8743564f58fcdaa2c26cb81'){throw "Unexpected installed version: $version"}
+          Write-Output "Installed version: $version"
+      - name: Retain experimental installer
+        if: ${{ always() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: cfh-office-built-source-patch
-          path: ${{ runner.temp }}\cfh-office-built-source.patch
-          if-no-files-found: error
-          retention-days: 7
-      - name: Compile CFH Office candidate
-        id: compile
-        shell: pwsh
-        timeout-minutes: 240
-        run: |
-          $script=@'
-          set -euo pipefail
-          export LODE_HOME="$(/usr/bin/cygpath -u "$RUNNER_TEMP")/lode"
-          export PATH="/usr/bin:$LODE_HOME/opt/bin:$PATH"
-          cd "$(/usr/bin/cygpath -u "$RUNNER_TEMP")/office-src"
-          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$PWD"
-          "$LODE_HOME/opt/bin/make" -j2
-          '@
-          [IO.File]::WriteAllText("$env:RUNNER_TEMP\cfh-office-make.sh", $script.Replace("`r`n", "`n"), [Text.Encoding]::ASCII)
-          & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" "$env:RUNNER_TEMP\cfh-office-make.sh"
-          if($LASTEXITCODE -ne 0){throw "Office compile failed: $LASTEXITCODE"}
-          Write-Output 'CFH OFFICE SOURCE BUILD COMPLETED'
-      - name: Verify Office build output
-        shell: pwsh
-        timeout-minutes: 3
-        run: |
-          $exe="$env:RUNNER_TEMP\office-src\instdir\program\soffice.com"
-          if(!(Test-Path $exe)){throw 'Office console executable missing after build'}
-          & $exe --version
-          $code=$LASTEXITCODE
-          Write-Output "Office version process exit: $code"
-          if($null -eq $code -or $code -ne 0){throw "Office version check failed: $code"}
-      - name: Retain exact Office build for testing
-        if: ${{ always() && steps.compile.outcome == 'success' }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: cfh-office-instdir
-          path: ${{ runner.temp }}\office-src\instdir
-          if-no-files-found: error
-          compression-level: 0
+          name: cfh-office-installer-probe
+          path: ${{ runner.temp }}\out\CFH-Office-26.8.2.2-setup.exe
+          if-no-files-found: warn
           retention-days: 7
