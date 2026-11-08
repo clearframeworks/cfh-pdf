@@ -1,19 +1,15 @@
-name: CFH Office installed format probe
+name: CFH Office installed UI probe
 on:
   workflow_dispatch:
 permissions:
   actions: read
   contents: read
 jobs:
-  fixture:
+  ui:
     runs-on: windows-2022
-    timeout-minutes: 35
+    timeout-minutes: 15
     steps:
-      - name: Fetch reviewed test harness
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: c5085cda013e44046a33b8432bb829018a870a31
-      - name: Verify and install exact installer
+      - name: Install exact experimental package
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -21,62 +17,45 @@ jobs:
           $zip="$env:RUNNER_TEMP\installer.zip"
           $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
           Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13604325046/zip' -Headers $headers -OutFile $zip
-          $hash=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hash -ne '5a29de99122bdd12953bf8f5d7bd4edc1fd30b6700d0dd6b45737d51102417c3'){throw "Installer archive digest mismatch: $hash"}
-          Expand-Archive -LiteralPath $zip -DestinationPath "$env:RUNNER_TEMP\package" -Force
+          if((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5a29de99122bdd12953bf8f5d7bd4edc1fd30b6700d0dd6b45737d51102417c3'){throw 'Archive digest mismatch'}
+          Expand-Archive $zip "$env:RUNNER_TEMP\package" -Force
           $setup=Get-ChildItem "$env:RUNNER_TEMP\package\*.exe" | Select-Object -First 1
-          $hash=(Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hash -ne 'd30ff05deba478b3eabcf55490df3d8abc2dbc430595dcff20b479ee71b95721'){throw "Installer digest mismatch: $hash"}
+          if((Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'd30ff05deba478b3eabcf55490df3d8abc2dbc430595dcff20b479ee71b95721'){throw 'Installer digest mismatch'}
           $dir="$env:RUNNER_TEMP\installed-office"
           $p=Start-Process $setup.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir") -Wait -PassThru
           if($p.ExitCode -ne 0){throw "Installer exit $($p.ExitCode)"}
-          $exe=Join-Path $dir 'program\soffice.com'
-          if(!(Test-Path $exe)){throw 'Installed executable missing'}
-          $version=& $exe --version
-          if($LASTEXITCODE -ne 0 -or ($version -join ' ') -notmatch 'CFH Office 26\.8\.2\.2 4f58d63d6beea882e8743564f58fcdaa2c26cb81'){throw "Wrong installed version: $version"}
-          Write-Output "INSTALLED EXE SHA256: $((Get-FileHash $exe -Algorithm SHA256).Hash)"
-      - name: Install hash-locked test dependencies
-        shell: pwsh
-        run: |
-          $requirements=@'
-          et-xmlfile==2.0.0 --hash=sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa
-          lxml==5.4.0 --hash=sha256:1dc4ca99e89c335a7ed47d38964abcb36c5910790f9bd106f2a8fa2ee0b909d2
-          openpyxl==3.1.5 --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2
-          pillow==11.2.1 --hash=sha256:14e33b28bf17c7a38eede290f77db7c664e4eb01f7869e37fa98a5aa95978941
-          python-docx==1.1.2 --hash=sha256:08c20d6058916fb19853fcf080f7f42b6270d89eac9fa5f8c15f691c0017fabe
-          python-pptx==1.0.2 --hash=sha256:160838e0b8565a8b1f67947675886e9fea18aa5e795db7ae531606d68e785cba
-          typing-extensions==4.13.2 --hash=sha256:a439e7c04b49fec3e5d3e2beaa21755cadbbdc391694e28ccdd36ca4a1408f8c
-          XlsxWriter==3.2.3 --hash=sha256:593f8296e8a91790c6d0378ab08b064f34a642b3feb787cf6738236bd0a4860d
-          '@
-          [IO.File]::WriteAllText("$env:RUNNER_TEMP\requirements.txt",$requirements,[Text.Encoding]::ASCII)
-          $python=(Get-Command python).Source
-          $version=& $python --version
-          if($version -notmatch '^Python 3\.12\.'){throw "Expected Python 3.12: $version"}
-          & $python -m venv "$env:RUNNER_TEMP\fixture-venv"
-          if($LASTEXITCODE -ne 0){throw 'venv creation failed'}
-          $python="$env:RUNNER_TEMP\fixture-venv\Scripts\python.exe"
-          & $python -m pip install --require-hashes --only-binary=:all: -r "$env:RUNNER_TEMP\requirements.txt"
-          if($LASTEXITCODE -ne 0){throw 'Dependency installation failed'}
-          & $python -m pip freeze
-      - name: Roundtrip and negative fixtures
-        shell: pwsh
-        timeout-minutes: 15
-        run: |
-          $python="$env:RUNNER_TEMP\fixture-venv\Scripts\python.exe"
-          $exe="$env:RUNNER_TEMP\installed-office\program\soffice.com"
-          & $python cfh-office-roundtrip-check.py $exe
-          if($LASTEXITCODE -ne 0){throw "Office fixture test failed: $LASTEXITCODE"}
-      - name: Open an installed Writer template
+      - name: Launch synthetic document in fresh profile
         shell: pwsh
         timeout-minutes: 3
         run: |
+          Add-Type -AssemblyName UIAutomationClient
+          Add-Type -AssemblyName UIAutomationTypes
           $dir="$env:RUNNER_TEMP\installed-office"
-          $template=Get-ChildItem "$dir\share\template" -File -Recurse -Filter '*.ott' | Select-Object -First 1
-          if(!$template){throw 'No Writer template found'}
-          $out="$env:RUNNER_TEMP\template-output"
-          New-Item -ItemType Directory -Path $out | Out-Null
-          $profile=([Uri]::new("$env:RUNNER_TEMP\template-profile")).AbsoluteUri
-          & "$dir\program\soffice.com" "-env:UserInstallation=$profile" --headless --convert-to pdf --outdir $out $template.FullName
-          $pdf=Get-ChildItem $out -Filter '*.pdf' | Select-Object -First 1
-          if($LASTEXITCODE -ne 0 -or !$pdf -or $pdf.Length -eq 0){throw 'Template conversion failed'}
-          Write-Output "Template opened: $($template.Name)"
+          $exe=Join-Path $dir 'program\soffice.exe'
+          $file="$env:RUNNER_TEMP\CFH-ui-fixture.txt"
+          [IO.File]::WriteAllText($file,'CFH synthetic GUI fixture',[Text.Encoding]::UTF8)
+          $profile=([Uri]::new("$env:RUNNER_TEMP\fresh-ui-profile")).AbsoluteUri
+          Start-Process $exe -ArgumentList @("-env:UserInstallation=$profile",'--writer',"`"$file`"") | Out-Null
+          $root=[Windows.Automation.AutomationElement]::RootElement
+          $condition=[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window)
+          $found=$null
+          for($i=0;$i -lt 30;$i++){
+            $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
+            foreach($window in $windows){
+              if($window.Current.Name -match 'CFH-ui-fixture'){
+                $proc=Get-Process -Id $window.Current.ProcessId -ErrorAction SilentlyContinue
+                if($proc -and $proc.Path -and $proc.Path.StartsWith($dir,[StringComparison]::OrdinalIgnoreCase)){$found=$window; break}
+              }
+            }
+            if($found){break}
+            Start-Sleep -Seconds 2
+          }
+          if(!$found){throw 'Synthetic document window was not observed via UI Automation'}
+          Write-Output "OBSERVED DOCUMENT WINDOW: $($found.Current.Name); PID: $($found.Current.ProcessId); EXE: $((Get-Process -Id $found.Current.ProcessId).Path)"
+          $items=$found.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)
+          $names=@(foreach($item in $items){if($item.Current.Name){$item.Current.Name}})
+          Write-Output "UI elements: $($items.Count)"
+          Write-Output "Named elements: $(($names | Select-Object -First 50) -join ' | ')"
+          if($names -match '(?i)donate'){throw 'Visible donation control found in fresh profile'}
+          Write-Output 'Donation check limited to exposed UI elements; unopened menus remain unverified.'
+          Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
