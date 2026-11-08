@@ -70,6 +70,19 @@ jobs:
           $version=& $exe --version
           if($LASTEXITCODE -ne 0 -or ($version -join ' ') -notmatch 'CFH Office 26\.8\.2\.2 4f58d63d6beea882e8743564f58fcdaa2c26cb81'){throw "Unexpected installed version: $version"}
           Write-Output "Installed version: $version"
+          $templates=@(Get-ChildItem -LiteralPath (Join-Path $dir 'share\template') -File -Recurse -ErrorAction Stop)
+          if($templates.Count -eq 0){throw 'Installed template inventory is empty'}
+          Write-Output "Installed template files: $($templates.Count)"
+      - name: Uninstall probe
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $dir="$env:RUNNER_TEMP\installed-office"
+          $uninstaller=Join-Path $dir 'unins000.exe'
+          if(!(Test-Path $uninstaller)){throw 'Uninstaller missing'}
+          $p=Start-Process $uninstaller -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
+          if($p.ExitCode -ne 0 -or (Test-Path (Join-Path $dir 'program\soffice.com'))){throw "Uninstall failed: $($p.ExitCode)"}
+          Write-Output 'Installed executable removed by uninstaller'
       - name: Retain experimental installer
         if: ${{ always() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
