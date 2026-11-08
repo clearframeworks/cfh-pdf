@@ -1,53 +1,24 @@
-name: CFH Office distribution inventory
+name: CFH Office XML source trace
 on:
   workflow_dispatch:
-permissions:
-  actions: read
+permissions: {}
 jobs:
-  inventory:
+  trace:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Inspect exact Office build archive
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Trace exact source and patch configuration
         run: |
           set -euo pipefail
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13603618108/zip -o "$RUNNER_TEMP/office.zip"
-          echo '959e433c61c13e2c72c85dd927a6d98200de9797c82a384c39e5942493b07391  '"$RUNNER_TEMP/office.zip" | sha256sum -c -
-          python3 - <<'PY'
-          import os, re, zipfile
-          z=zipfile.ZipFile(os.path.join(os.environ['RUNNER_TEMP'],'office.zip'))
-          names=z.namelist()
-          print('TOTAL ARCHIVE ENTRIES',len(names))
-          for n in ('LICENSE.html','NOTICE'):
-              data=z.read(n)
-              print('NOTICE FILE',n,'bytes',len(data),'sha256',__import__('hashlib').sha256(data).hexdigest())
-              for term in ('Mozilla Public License','Apache License','GNU LESSER','MIT License','BSD License'):
-                  print('NOTICE TERM',n,term,term.casefold() in data.decode('utf-8','replace').casefold())
-          for title,pattern in [('LICENSE OR NOTICE',r'(^|/)(license|licence|notice|copying|readme)([._/-]|$)'),('WINDOWS RUNTIME',r'(^|/)(vcruntime|msvcp|ucrtbase|api-ms-win).*\.(dll|exe)$'),('EXECUTABLES AND LIBRARIES',r'(^|/)program/[^/]+\.(dll|exe|com)$')]:
-              matches=[n for n in names if re.search(pattern,n,re.I)]
-              print(title,'COUNT',len(matches))
-              for n in matches[:150]: print(n)
-          out=os.path.join(os.environ['RUNNER_TEMP'],'office-program')
-          os.makedirs(out,exist_ok=True)
-          for n in names:
-              if re.fullmatch(r'program/[^/]+\.(?:dll|exe|com)',n,re.I):
-                  z.extract(n,out)
-          PY
-          python3 - <<'PY'
-          import collections, glob, os, re, subprocess
-          files=glob.glob(os.path.join(os.environ['RUNNER_TEMP'],'office-program','program','*'))
-          imports=collections.Counter()
-          failed=[]
-          for path in files:
-              p=subprocess.run(['objdump','-p',path],text=True,capture_output=True)
-              if p.returncode: failed.append(os.path.basename(path)); continue
-              for name in re.findall(r'DLL Name:\s*(\S+)',p.stdout,re.I): imports[name.lower()]+=1
-              for symbol in ('htmlSaveFileFormat','xmlCharEncCloseFunc','xmlAddNextSibling','xmlXIncludeProcess'):
-                  if re.search(r'\b'+symbol+r'\b',p.stdout): print('SYMBOL OBSERVED',os.path.basename(path),symbol)
-          print('IMPORT SCAN FILES',len(files),'FAILED',len(failed))
-          print('FAILED FILES',failed[:30])
-          for name,count in sorted(imports.items()):
-              if re.search(r'vcruntime|msvcp|ucrtbase|api-ms-win-crt',name): print('RUNTIME IMPORT',name,count)
-          PY
+          git clone --depth 1 --branch cfh-office-26-8-2-2 https://github.com/clearframeworks/cfh-office.git "$RUNNER_TEMP/office"
+          cd "$RUNNER_TEMP/office"
+          test "$(git rev-parse HEAD)" = 4f58d63d6beea882e8743564f58fcdaa2c26cb81
+          echo LIBXML_MANIFEST
+          grep -E '^LIBXML_(SHA256SUM|VERSION_MICRO|TARBALL)' download.lst
+          echo LIBXML_PATCHES
+          cat external/libxml2/UnpackedTarball_libxml2.mk
+          cat external/libxml2/ExternalProject_libxml2.mk
+          for symbol in htmlSaveFileFormat xmlCharEncCloseFunc xmlXIncludeProcess xmlAddNextSibling; do
+            echo "SOURCE REFERENCES $symbol"
+            git grep -n -F "$symbol" -- ':!external/libxml2/*' | head -n 100 || true
+          done
