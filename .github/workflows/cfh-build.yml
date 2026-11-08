@@ -84,6 +84,15 @@ jobs:
           [Windows.Forms.SendKeys]::SendWait(' CFH_GUI_SAVE_SENTINEL')
           [Windows.Forms.SendKeys]::SendWait('^s')
           Start-Sleep -Seconds 4
+          Add-Type -AssemblyName System.Drawing
+          $bounds=[Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bitmap=[Drawing.Bitmap]::new($bounds.Width,$bounds.Height)
+          $graphics=[Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($bounds.Location,[Drawing.Point]::Empty,$bounds.Size)
+          $stream=[IO.MemoryStream]::new()
+          $bitmap.Save($stream,[Drawing.Imaging.ImageFormat]::Png)
+          Write-Output "CFH_SYNTHETIC_SCREENSHOT_BASE64:$([Convert]::ToBase64String($stream.ToArray()))"
+          $graphics.Dispose(); $bitmap.Dispose(); $stream.Dispose()
           $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
           foreach($window in $windows){Write-Output "PRE-CLOSE WINDOW: $($window.Current.Name) PID $($window.Current.ProcessId)"}
           Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
