@@ -72,6 +72,8 @@ jobs:
           [Windows.Forms.SendKeys]::SendWait(' CFH_GUI_SAVE_SENTINEL')
           [Windows.Forms.SendKeys]::SendWait('^s')
           Start-Sleep -Seconds 4
+          Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 2
           $saved=[IO.File]::ReadAllText($file)
           if($saved -notmatch 'CFH_GUI_SAVE_SENTINEL'){
             $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
@@ -79,4 +81,3 @@ jobs:
             throw 'Synthetic GUI edit was not saved to the original file'
           }
           Write-Output 'SYNTHETIC GUI EDIT AND SAVE VERIFIED'
-          Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
