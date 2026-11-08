@@ -104,6 +104,12 @@ jobs:
           try { $ok=[CFHPrintSave]::PrintWindow([IntPtr]$target.Current.NativeWindowHandle,$dc,2) } finally { $g.ReleaseHdc($dc) }
           if($ok){$bmp.Save("$env:RUNNER_TEMP\post-save.png",[Drawing.Imaging.ImageFormat]::Png)}
           $g.Dispose(); $bmp.Dispose()
+          if(!$popup){throw 'Expected text-format confirmation was not observed'}
+          $confirm=$popup.Current.BoundingRectangle
+          [CFHWindow]::SetCursorPos([int]($confirm.Right-75),[int]($confirm.Bottom-34)) | Out-Null
+          [CFHWindow]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [CFHWindow]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+          Start-Sleep -Seconds 4
+          Write-Output 'Selected observed Use Text Format confirmation'
           $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
           foreach($window in $windows){Write-Output "PRE-CLOSE WINDOW: $($window.Current.Name) PID $($window.Current.ProcessId)"}
           Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
