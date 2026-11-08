@@ -62,12 +62,13 @@ jobs:
             $reg.SetAccessControl($original); if($reg.GetAccessControl().Sddl -ne $original.Sddl){throw 'Registry ACL restoration mismatch'}; $reg.Close(); Write-Output 'Original registry ACL restored'
           }
           if(!(Test-Path (Join-Path $dir 'unins000.exe'))){throw 'Uninstaller unavailable for recovery'}
-          $p=Start-Process (Join-Path $dir 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
-          if($p.ExitCode -ne 0){throw "Recovery uninstall failed: $($p.ExitCode)"}
+          $p=Start-Process (Join-Path $dir 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/LOG=$env:RUNNER_TEMP\recovery-uninstall.log") -Wait -PassThru
+          if($p.ExitCode -ne 0){Get-Content "$env:RUNNER_TEMP\recovery-uninstall.log" | Select-Object -Last 30 | Write-Output; throw "Recovery uninstall failed: $($p.ExitCode)"}
           if(Test-Path (Join-Path $dir 'program\soffice.exe')){throw 'Executable remains after recovery'} 
           if(Test-Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe'){throw 'Owned registration remains after recovery'}
           Write-Output 'Uninstall completed after restoring registry access'
           if($failure){throw $failure}
+
 
 
 
