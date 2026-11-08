@@ -1,82 +1,27 @@
-name: CFH Office installed format probe
+name: CFH Office distribution inventory
 on:
   workflow_dispatch:
 permissions:
   actions: read
-  contents: read
 jobs:
-  fixture:
-    runs-on: windows-2022
-    timeout-minutes: 35
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Fetch reviewed test harness
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: c5085cda013e44046a33b8432bb829018a870a31
-      - name: Verify and install exact installer
-        shell: pwsh
+      - name: Inspect exact Office build archive
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip="$env:RUNNER_TEMP\installer.zip"
-          $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
-          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13604325046/zip' -Headers $headers -OutFile $zip
-          $hash=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hash -ne '5a29de99122bdd12953bf8f5d7bd4edc1fd30b6700d0dd6b45737d51102417c3'){throw "Installer archive digest mismatch: $hash"}
-          Expand-Archive -LiteralPath $zip -DestinationPath "$env:RUNNER_TEMP\package" -Force
-          $setup=Get-ChildItem "$env:RUNNER_TEMP\package\*.exe" | Select-Object -First 1
-          $hash=(Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hash -ne 'd30ff05deba478b3eabcf55490df3d8abc2dbc430595dcff20b479ee71b95721'){throw "Installer digest mismatch: $hash"}
-          $dir="$env:RUNNER_TEMP\installed-office"
-          $p=Start-Process $setup.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir") -Wait -PassThru
-          if($p.ExitCode -ne 0){throw "Installer exit $($p.ExitCode)"}
-          $exe=Join-Path $dir 'program\soffice.com'
-          if(!(Test-Path $exe)){throw 'Installed executable missing'}
-          $version=& $exe --version
-          if($LASTEXITCODE -ne 0 -or ($version -join ' ') -notmatch 'CFH Office 26\.8\.2\.2 4f58d63d6beea882e8743564f58fcdaa2c26cb81'){throw "Wrong installed version: $version"}
-          Write-Output "INSTALLED EXE SHA256: $((Get-FileHash $exe -Algorithm SHA256).Hash)"
-      - name: Install hash-locked test dependencies
-        shell: pwsh
-        run: |
-          $requirements=@'
-          et-xmlfile==2.0.0 --hash=sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa
-          lxml==5.4.0 --hash=sha256:1dc4ca99e89c335a7ed47d38964abcb36c5910790f9bd106f2a8fa2ee0b909d2
-          openpyxl==3.1.5 --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2
-          pillow==11.2.1 --hash=sha256:14e33b28bf17c7a38eede290f77db7c664e4eb01f7869e37fa98a5aa95978941
-          python-docx==1.1.2 --hash=sha256:08c20d6058916fb19853fcf080f7f42b6270d89eac9fa5f8c15f691c0017fabe
-          python-pptx==1.0.2 --hash=sha256:160838e0b8565a8b1f67947675886e9fea18aa5e795db7ae531606d68e785cba
-          typing-extensions==4.13.2 --hash=sha256:a439e7c04b49fec3e5d3e2beaa21755cadbbdc391694e28ccdd36ca4a1408f8c
-          XlsxWriter==3.2.3 --hash=sha256:593f8296e8a91790c6d0378ab08b064f34a642b3feb787cf6738236bd0a4860d
-          '@
-          [IO.File]::WriteAllText("$env:RUNNER_TEMP\requirements.txt",$requirements,[Text.Encoding]::ASCII)
-          $python=(Get-Command python).Source
-          $version=& $python --version
-          if($version -notmatch '^Python 3\.12\.'){throw "Expected Python 3.12: $version"}
-          & $python -m venv "$env:RUNNER_TEMP\fixture-venv"
-          if($LASTEXITCODE -ne 0){throw 'venv creation failed'}
-          $python="$env:RUNNER_TEMP\fixture-venv\Scripts\python.exe"
-          & $python -m pip install --require-hashes --only-binary=:all: -r "$env:RUNNER_TEMP\requirements.txt"
-          if($LASTEXITCODE -ne 0){throw 'Dependency installation failed'}
-          & $python -m pip freeze
-      - name: Roundtrip and negative fixtures
-        shell: pwsh
-        timeout-minutes: 15
-        run: |
-          $python="$env:RUNNER_TEMP\fixture-venv\Scripts\python.exe"
-          $exe="$env:RUNNER_TEMP\installed-office\program\soffice.com"
-          & $python cfh-office-roundtrip-check.py $exe
-          if($LASTEXITCODE -ne 0){throw "Office fixture test failed: $LASTEXITCODE"}
-      - name: Open an installed Writer template
-        shell: pwsh
-        timeout-minutes: 3
-        run: |
-          $dir="$env:RUNNER_TEMP\installed-office"
-          $template=Get-ChildItem "$dir\share\template" -File -Recurse -Filter '*.ott' | Select-Object -First 1
-          if(!$template){throw 'No Writer template found'}
-          $out="$env:RUNNER_TEMP\template-output"
-          New-Item -ItemType Directory -Path $out | Out-Null
-          $profile=([Uri]::new("$env:RUNNER_TEMP\template-profile")).AbsoluteUri
-          & "$dir\program\soffice.com" "-env:UserInstallation=$profile" --headless --convert-to pdf --outdir $out $template.FullName
-          $pdf=Get-ChildItem $out -Filter '*.pdf' | Select-Object -First 1
-          if($LASTEXITCODE -ne 0 -or !$pdf -or $pdf.Length -eq 0){throw 'Template conversion failed'}
-          Write-Output "Template opened: $($template.Name)"
+          set -euo pipefail
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13603618108/zip -o "$RUNNER_TEMP/office.zip"
+          echo '959e433c61c13e2c72c85dd927a6d98200de9797c82a384c39e5942493b07391  '"$RUNNER_TEMP/office.zip" | sha256sum -c -
+          python3 - <<'PY'
+          import os, re, zipfile
+          z=zipfile.ZipFile(os.path.join(os.environ['RUNNER_TEMP'],'office.zip'))
+          names=z.namelist()
+          print('TOTAL ARCHIVE ENTRIES',len(names))
+          for title,pattern in [('LICENSE OR NOTICE',r'(^|/)(license|licence|notice|copying|readme)([._/-]|$)'),('WINDOWS RUNTIME',r'(^|/)(vcruntime|msvcp|ucrtbase|api-ms-win).*\.(dll|exe)$'),('EXECUTABLES AND LIBRARIES',r'(^|/)program/[^/]+\.(dll|exe|com)$')]:
+              matches=[n for n in names if re.search(pattern,n,re.I)]
+              print(title,'COUNT',len(matches))
+              for n in matches[:150]: print(n)
+          PY
