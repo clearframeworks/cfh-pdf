@@ -16,11 +16,11 @@ jobs:
         run: |
           $zip="$env:RUNNER_TEMP\installer.zip"
           $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
-          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13605543503/zip' -Headers $headers -OutFile $zip
-          if((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '928e1f4a7ef2d0342c506df164427b001a82c510c50ce73aedebb1d370c40523'){throw 'Archive digest mismatch'}
+          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13607111226/zip' -Headers $headers -OutFile $zip
+          if((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '79aa85430478e3dcb077bd9b9dbc21a446c5f7cd564f7eddd5797013e2d277ab'){throw 'Archive digest mismatch'}
           Expand-Archive $zip "$env:RUNNER_TEMP\package" -Force
           $setup=Get-ChildItem "$env:RUNNER_TEMP\package\*.exe" | Select-Object -First 1
-          if((Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne '1d800989e36d817dcf6d2c94534941e72738c221a123e80d8b7f31c20ed70cf9'){throw 'Installer digest mismatch'}
+          if((Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne '37ef3929d54edb8ffcc6dd26ce3cac649d947f536e8d963900811fe63f7a4586'){throw 'Installer digest mismatch'}
           $dir="$env:RUNNER_TEMP\installed-office"
           $p=Start-Process $setup.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=associations',"/DIR=$dir") -Wait -PassThru
           if($p.ExitCode -ne 0){throw "Installer exit $($p.ExitCode)"}
