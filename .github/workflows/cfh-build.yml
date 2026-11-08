@@ -12,7 +12,7 @@ jobs:
       - name: Fetch reviewed test harness
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 813f4b8c7e86368045d67297982b5091534d224d
+          ref: c5085cda013e44046a33b8432bb829018a870a31
       - name: Verify and install exact installer
         shell: pwsh
         env:
