@@ -1,93 +1,16 @@
-name: CFH Office installer probe
+name: CFH Office fixture dependency inventory
 on:
   workflow_dispatch:
-permissions:
-  actions: read
-  contents: read
+permissions: {}
 jobs:
-  installer:
+  inventory:
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 10
     steps:
-      - name: Fetch exact build artifact
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $zip="$env:RUNNER_TEMP\office.zip"
-          $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
-          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13603618108/zip' -Headers $headers -OutFile $zip
-          $hash=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hash -ne '959e433c61c13e2c72c85dd927a6d98200de9797c82a384c39e5942493b07391'){throw "Build artifact digest mismatch: $hash"}
-          Expand-Archive -LiteralPath $zip -DestinationPath "$env:RUNNER_TEMP\office" -Force
-          $exe="$env:RUNNER_TEMP\office\program\soffice.com"
-          if(!(Test-Path $exe)){throw 'Expected built console executable not found'}
-          $version=& $exe --version
-          if($LASTEXITCODE -ne 0 -or ($version -join ' ') -notmatch 'CFH Office 26\.8\.2\.2 4f58d63d6beea882e8743564f58fcdaa2c26cb81'){throw "Unexpected built version: $version"}
-          Write-Output "Built version: $version"
-      - name: Package installer
+      - name: Download exact test wheels
         shell: pwsh
         run: |
-          $iscc="${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if(!(Test-Path $iscc)){throw 'Inno Setup unavailable on runner'}
-          $recipe=@'
-          #define AppName "CFH Office"
-          [Setup]
-          AppId={{B94D8A10-7932-4DE1-8C83-583AD60C2B88}
-          AppName={#AppName}
-          AppVersion=26.8.2.2
-          AppPublisher=Coders for Humanity
-          DefaultDirName={autopf}\CFH Office
-          DefaultGroupName=CFH Office
-          ArchitecturesAllowed=x64compatible
-          ArchitecturesInstallIn64BitMode=x64compatible
-          Compression=lzma2/fast
-          SolidCompression=yes
-          OutputDir=OUTPUT_DIR
-          OutputBaseFilename=CFH-Office-26.8.2.2-setup
-          UninstallDisplayIcon={app}\program\soffice.exe
-          [Files]
-          Source: "SOURCE_DIR\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-          [Icons]
-          Name: "{autoprograms}\CFH Office"; Filename: "{app}\program\soffice.exe"
-          '@
-          $recipe=$recipe.Replace('SOURCE_DIR',"$env:RUNNER_TEMP\office").Replace('OUTPUT_DIR',"$env:RUNNER_TEMP\out")
-          [IO.File]::WriteAllText("$env:RUNNER_TEMP\office.iss",$recipe,[Text.Encoding]::UTF8)
-          & $iscc "$env:RUNNER_TEMP\office.iss"
-          if($LASTEXITCODE -ne 0){throw "Installer build failed: $LASTEXITCODE"}
-          $installer=Get-Item "$env:RUNNER_TEMP\out\CFH-Office-26.8.2.2-setup.exe"
-          Write-Output "INSTALLER SHA256: $((Get-FileHash $installer -Algorithm SHA256).Hash)"
-      - name: Install and smoke test
-        shell: pwsh
-        timeout-minutes: 10
-        run: |
-          $installer="$env:RUNNER_TEMP\out\CFH-Office-26.8.2.2-setup.exe"
-          $dir="$env:RUNNER_TEMP\installed-office"
-          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir") -Wait -PassThru
-          if($p.ExitCode -ne 0){throw "Installer exit $($p.ExitCode)"}
-          $exe=Join-Path $dir 'program\soffice.com'
-          if(!(Test-Path $exe)){throw 'Installed console executable missing'}
-          $version=& $exe --version
-          if($LASTEXITCODE -ne 0 -or ($version -join ' ') -notmatch 'CFH Office 26\.8\.2\.2 4f58d63d6beea882e8743564f58fcdaa2c26cb81'){throw "Unexpected installed version: $version"}
-          Write-Output "Installed version: $version"
-          $templates=@(Get-ChildItem -LiteralPath (Join-Path $dir 'share\template') -File -Recurse -ErrorAction Stop)
-          if($templates.Count -eq 0){throw 'Installed template inventory is empty'}
-          Write-Output "Installed template files: $($templates.Count)"
-      - name: Uninstall probe
-        shell: pwsh
-        timeout-minutes: 10
-        run: |
-          $dir="$env:RUNNER_TEMP\installed-office"
-          $uninstaller=Join-Path $dir 'unins000.exe'
-          if(!(Test-Path $uninstaller)){throw 'Uninstaller missing'}
-          $p=Start-Process $uninstaller -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
-          if($p.ExitCode -ne 0 -or (Test-Path (Join-Path $dir 'program\soffice.com'))){throw "Uninstall failed: $($p.ExitCode)"}
-          Write-Output 'Installed executable removed by uninstaller'
-      - name: Retain experimental installer
-        if: ${{ always() }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: cfh-office-installer-probe
-          path: ${{ runner.temp }}\out\CFH-Office-26.8.2.2-setup.exe
-          if-no-files-found: warn
-          retention-days: 7
+          $python=(Get-Command python).Source
+          & $python -m pip download --only-binary=:all: --dest "$env:RUNNER_TEMP\wheels" python-docx==1.1.2 openpyxl==3.1.5 python-pptx==1.0.2 lxml==5.4.0 typing-extensions==4.13.2 pillow==11.2.1 XlsxWriter==3.2.3 et-xmlfile==2.0.0
+          if($LASTEXITCODE -ne 0){throw 'Wheel download failed'}
+          Get-ChildItem "$env:RUNNER_TEMP\wheels\*.whl" | Sort-Object Name | ForEach-Object { Write-Output "$($_.Name) $((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())" }
