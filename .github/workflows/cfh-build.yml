@@ -58,7 +58,7 @@ jobs:
           & $python -m pip install --require-hashes --only-binary=:all: -r "$env:RUNNER_TEMP\requirements.txt"
           if($LASTEXITCODE -ne 0){throw 'Dependency installation failed'}
           & $python -m pip freeze
-      - name: Test installed Calc edit and save
+      - name: Test installed Impress slide save
         shell: pwsh
         timeout-minutes: 5
         run: |
@@ -66,65 +66,73 @@ jobs:
           Add-Type -AssemblyName UIAutomationClient
           Add-Type -AssemblyName UIAutomationTypes
           Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
           Add-Type @'
           using System; using System.Runtime.InteropServices;
-          public static class CFHCalcInput {
+          public static class CFHImpressInput {
            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-           [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
+           [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
            [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,uint data,UIntPtr extra);
+           [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h,IntPtr dc,uint flags);
           }
           '@
           $dir="$env:RUNNER_TEMP\installed-office"
           $python="$env:RUNNER_TEMP\fixture-venv\Scripts\python.exe"
-          $file="$env:RUNNER_TEMP\CFH-calc-fixture.xlsx"
-          & $python -c 'from openpyxl import Workbook; import sys; w=Workbook(); w.active["A1"]=7; w.save(sys.argv[1])' $file
+          $file="$env:RUNNER_TEMP\CFH-impress-edit-fixture.pptx"
+          & $python -c 'from pptx import Presentation; import sys; p=Presentation(); p.slides.add_slide(p.slide_layouts[6]); p.save(sys.argv[1])' $file
           if($LASTEXITCODE -ne 0){throw 'Fixture creation failed'}
-          $profile=([Uri]::new("$env:RUNNER_TEMP\calc-profile")).AbsoluteUri
-          Start-Process "$dir\program\soffice.exe" -ArgumentList @("-env:UserInstallation=$profile",'--calc',"`"$file`"") | Out-Null
+          $profile=([Uri]::new("$env:RUNNER_TEMP\impress-edit-profile")).AbsoluteUri
+          Start-Process "$dir\program\soffice.exe" -ArgumentList @("-env:UserInstallation=$profile",'--impress',"`"$file`"") | Out-Null
           $root=[Windows.Automation.AutomationElement]::RootElement
-          $condition=[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window)
+          $windowCondition=[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window)
           $found=$null
-          for($i=0;$i -lt 30;$i++){
-            foreach($window in $root.FindAll([Windows.Automation.TreeScope]::Children,$condition)){
-              if($window.Current.Name -match 'CFH-calc-fixture'){
-                $process=Get-Process -Id $window.Current.ProcessId -ErrorAction SilentlyContinue
-                if($process -and $process.Path.StartsWith($dir,[StringComparison]::OrdinalIgnoreCase)){$found=$window;break}
-              }
+          for($i=0;$i -lt 45;$i++){
+           foreach($w in $root.FindAll([Windows.Automation.TreeScope]::Children,$windowCondition)){
+            if($w.Current.Name -match 'CFH-impress-edit-fixture'){
+             $p=Get-Process -Id $w.Current.ProcessId -ErrorAction SilentlyContinue
+             if($p -and $p.Path.StartsWith($dir,[StringComparison]::OrdinalIgnoreCase)){$found=$w;break}
             }
-            if($found){break}; Start-Sleep -Seconds 2
+           }
+           if($found){break}; Start-Sleep -Seconds 2
           }
-          if(!$found){throw 'Installed Calc window not found'}
+          if(!$found){throw 'Installed Impress window not found'}
           Start-Sleep -Seconds 20
           $welcome=$found.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'Welcome to CFH Office!'))
           if($welcome){
-            $r=$welcome.Current.BoundingRectangle
-            [CFHCalcInput]::SetCursorPos([int]($r.Right-15),[int]($r.Top+15)) | Out-Null
-            [CFHCalcInput]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [CFHCalcInput]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
-            Start-Sleep -Seconds 3
-            if($found.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'Welcome to CFH Office!'))){throw 'Welcome dialog remained'}
+           $r=$welcome.Current.BoundingRectangle
+           [CFHImpressInput]::SetCursorPos([int]($r.Right-15),[int]($r.Top+15)) | Out-Null
+           [CFHImpressInput]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [CFHImpressInput]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+           Start-Sleep -Seconds 3
+           if($found.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'Welcome to CFH Office!'))){throw 'Welcome dialog remained'}
           }
-          $focused=[CFHCalcInput]::SetForegroundWindow([IntPtr]$found.Current.NativeWindowHandle); Write-Output "Foreground request=$focused window=$([CFHCalcInput]::GetForegroundWindow()) expected=$($found.Current.NativeWindowHandle) PID=$($found.Current.ProcessId)"
-          # Ctrl+Home selects A1; entering a value avoids coordinate assumptions about grid layout.
-          [Windows.Forms.SendKeys]::SendWait('^{HOME}')
-          [Windows.Forms.SendKeys]::SendWait('42')
-          [Windows.Forms.SendKeys]::SendWait('{ENTER}')
+          $focused=[CFHImpressInput]::SetForegroundWindow([IntPtr]$found.Current.NativeWindowHandle)
+          Write-Output "FOCUS request=$focused actual=$([CFHImpressInput]::GetForegroundWindow()) expected=$($found.Current.NativeWindowHandle)"
+          if([CFHImpressInput]::GetForegroundWindow() -ne [IntPtr]$found.Current.NativeWindowHandle){throw 'Impress did not become foreground'}
+          [Windows.Forms.SendKeys]::SendWait('^m')
+          Start-Sleep -Seconds 3
           [Windows.Forms.SendKeys]::SendWait('^s')
           Start-Sleep -Seconds 5
-          $popup=$found.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window))
-          if($popup){Write-Output "UNRESOLVED POPUP: $($popup.Current.Name) $($popup.Current.BoundingRectangle)"; $found.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition) | ForEach-Object { Write-Output "UI: $($_.Current.ControlType.ProgrammaticName) $($_.Current.Name) $($_.Current.BoundingRectangle)" }; Add-Type -AssemblyName System.Drawing; $r=$popup.Current.BoundingRectangle; $bmp=[Drawing.Bitmap]::new([int]$r.Width,[int]$r.Height); $g=[Drawing.Graphics]::FromImage($bmp); $dc=$g.GetHdc(); try { $ok=[CFHCalcInput]::PrintWindow([IntPtr]$popup.Current.NativeWindowHandle,$dc,2) } finally { $g.ReleaseHdc($dc) }; if($ok){$bmp.Save("$env:RUNNER_TEMP\calc-popup.png",[Drawing.Imaging.ImageFormat]::Png)}; $g.Dispose(); $bmp.Dispose(); $r=$popup.Current.BoundingRectangle; [CFHCalcInput]::SetCursorPos([int]($r.Left+$r.Width*0.80),[int]($r.Top+$r.Height*0.88)) | Out-Null; [CFHCalcInput]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [CFHCalcInput]::mouse_event(4,0,0,0,[UIntPtr]::Zero); Start-Sleep -Seconds 4; if($found.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window))){throw 'Format confirmation remains'}}
+          $popup=$found.FindFirst([Windows.Automation.TreeScope]::Descendants,$windowCondition)
+          if($popup){
+           $r=$popup.Current.BoundingRectangle
+           Write-Output "SAVE POPUP: $($popup.Current.Name) $r"
+           if($r.Width -le 0 -or $r.Height -le 0){throw 'Popup has no visible bounds'}
+           $bmp=[Drawing.Bitmap]::new([int]$r.Width,[int]$r.Height); $g=[Drawing.Graphics]::FromImage($bmp); $dc=$g.GetHdc()
+           try{$ok=[CFHImpressInput]::PrintWindow([IntPtr]$popup.Current.NativeWindowHandle,$dc,2)}finally{$g.ReleaseHdc($dc)}
+           if($ok){$bmp.Save("$env:RUNNER_TEMP\impress-save-popup.png",[Drawing.Imaging.ImageFormat]::Png)}
+           $g.Dispose(); $bmp.Dispose()
+           throw 'Save popup requires inspection before interaction'
+          }
           Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
           Start-Sleep -Seconds 2
-          & $python -c 'from openpyxl import load_workbook; import sys; x=load_workbook(sys.argv[1]); print("SAVED A1:",x.active["A1"].value); assert x.active["A1"].value == 42' $file
-          if($LASTEXITCODE -ne 0){throw 'Calc cell was not persisted'}
-          Write-Output 'CALC GUI CELL EDIT AND SAVE VERIFIED'
-
-
+          & $python -c 'from pptx import Presentation; import sys; p=Presentation(sys.argv[1]); print("SAVED SLIDE COUNT:",len(p.slides)); assert len(p.slides)==2' $file
+          if($LASTEXITCODE -ne 0){throw 'Added slide was not persisted'}
+          Write-Output 'IMPRESS GUI ADD SLIDE AND SAVE VERIFIED'
       - name: Retain synthetic popup
         if: ${{ always() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: calc-popup
-          path: ${{ runner.temp }}\calc-popup.png
+          name: impress-save-popup
+          path: ${{ runner.temp }}\impress-save-popup.png
           if-no-files-found: ignore
-
