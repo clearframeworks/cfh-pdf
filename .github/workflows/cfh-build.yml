@@ -30,14 +30,18 @@ jobs:
           if(Test-Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe'){throw 'Unexpected pre-existing registration'}
           $p=Start-Process $setup -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=associations',"/DIR=$dir") -Wait -PassThru
           if($p.ExitCode -ne 0 -or !(Test-Path $key)){throw 'Setup failed before denial test'}
-          $original=Get-Acl -LiteralPath $key
-          $denied=Get-Acl -LiteralPath $key
+          $sub='Software\Classes\Applications\CFHOffice.exe\SupportedTypes'
+          $rights=[Security.AccessControl.RegistryRights]::ReadPermissions -bor [Security.AccessControl.RegistryRights]::ChangePermissions
+          $reg=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($sub,[Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,$rights)
+          if(-not $reg){throw 'Cannot open registry key for ACL control'}
+          $original=$reg.GetAccessControl()
+          $denied=$reg.GetAccessControl()
           $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
           $rule=[Security.AccessControl.RegistryAccessRule]::new($sid,[Security.AccessControl.RegistryRights]::SetValue,[Security.AccessControl.AccessControlType]::Deny)
           $denied.AddAccessRule($rule)
           $failure=$null
           try {
-            Set-Acl -LiteralPath $key -AclObject $denied
+            $reg.SetAccessControl($denied)
             $blocked=$false
             try { New-ItemProperty -LiteralPath $key -Name 'CFHDenialProbe' -Value 'test' -ErrorAction Stop | Out-Null } catch { if ($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException] -or $_.Exception.InnerException -is [System.UnauthorizedAccessException] -or $_.CategoryInfo.Category -eq [System.Management.Automation.ErrorCategory]::PermissionDenied) { $blocked=$true } else { throw } }
             if(-not $blocked){throw 'SetValue denial did not take effect'}; Write-Output 'SetValue denial verified'
@@ -55,7 +59,7 @@ jobs:
             $failure=$_
             Write-Output "Denial test error: $failure"
           } finally {
-            if(!(Test-Path $key)){throw 'Denied registry key disappeared unexpectedly'}; if(Test-Path $key){Set-Acl -LiteralPath $key -AclObject $original; if((Get-Acl -LiteralPath $key).Sddl -ne $original.Sddl){throw 'Registry ACL restoration mismatch'}; Write-Output 'Original registry ACL restored'}
+            $reg.SetAccessControl($original); if($reg.GetAccessControl().Sddl -ne $original.Sddl){throw 'Registry ACL restoration mismatch'}; $reg.Close(); Write-Output 'Original registry ACL restored'
           }
           if(!(Test-Path (Join-Path $dir 'unins000.exe'))){throw 'Uninstaller unavailable for recovery'}
           $p=Start-Process (Join-Path $dir 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
@@ -64,6 +68,8 @@ jobs:
           if(Test-Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe'){throw 'Owned registration remains after recovery'}
           Write-Output 'Uninstall completed after restoring registry access'
           if($failure){throw $failure}
+
+
 
 
 
