@@ -58,4 +58,25 @@ jobs:
           Write-Output "Named elements: $(($names | Select-Object -First 50) -join ' | ')"
           if($names -match '(?i)donate'){throw 'Visible donation control found in fresh profile'}
           Write-Output 'Donation check limited to exposed UI elements; unopened menus remain unverified.'
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class CFHWindow { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); }
+          '@
+          Write-Output "Initial foreground request: $([CFHWindow]::SetForegroundWindow([IntPtr]$found.Current.NativeWindowHandle))"
+          [Windows.Forms.SendKeys]::SendWait('{ESC}')
+          Start-Sleep -Seconds 2
+          Write-Output "Edit foreground request: $([CFHWindow]::SetForegroundWindow([IntPtr]$found.Current.NativeWindowHandle))"
+          [Windows.Forms.SendKeys]::SendWait('^{END}')
+          [Windows.Forms.SendKeys]::SendWait(' CFH_GUI_SAVE_SENTINEL')
+          [Windows.Forms.SendKeys]::SendWait('^s')
+          Start-Sleep -Seconds 4
+          $saved=[IO.File]::ReadAllText($file)
+          if($saved -notmatch 'CFH_GUI_SAVE_SENTINEL'){
+            $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
+            foreach($window in $windows){Write-Output "WINDOW DIAGNOSTIC: $($window.Current.Name) PID $($window.Current.ProcessId)"}
+            throw 'Synthetic GUI edit was not saved to the original file'
+          }
+          Write-Output 'SYNTHETIC GUI EDIT AND SAVE VERIFIED'
           Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
