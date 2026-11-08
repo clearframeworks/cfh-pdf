@@ -123,7 +123,11 @@ jobs:
           if($ok){$bmp.Save("$env:RUNNER_TEMP\post-save.png",[Drawing.Imaging.ImageFormat]::Png)}
           $g.Dispose(); $bmp.Dispose()
           if(!$popup){Write-Output 'No save confirmation observed'} else {
-          throw 'DOCX save confirmation requires inspection before interaction'
+          $confirm=$popup.Current.BoundingRectangle
+          [CFHWindow]::SetCursorPos([int]($confirm.Right-75),[int]($confirm.Bottom-34)) | Out-Null
+          [CFHWindow]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [CFHWindow]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+          Start-Sleep -Seconds 4
+          Write-Output 'Selected observed Use Word 2007 Format confirmation'
           }
           $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
           foreach($window in $windows){Write-Output "PRE-CLOSE WINDOW: $($window.Current.Name) PID $($window.Current.ProcessId)"}
