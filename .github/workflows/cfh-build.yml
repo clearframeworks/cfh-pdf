@@ -1,202 +1,59 @@
-﻿name: CFH Office installer probe
+name: CFH Office runtime prerequisite negative probe
 on:
   workflow_dispatch:
 permissions:
   actions: read
-  contents: read
 jobs:
-  installer:
+  runtime:
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 15
     steps:
-      - name: Fetch exact build artifact
+      - name: Fetch exact installer
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $zip="$env:RUNNER_TEMP\office.zip"
+          $zip="$env:RUNNER_TEMP\installer.zip"
           $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
-          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13603618108/zip' -Headers $headers -OutFile $zip
-          $hash=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hash -ne '959e433c61c13e2c72c85dd927a6d98200de9797c82a384c39e5942493b07391'){throw "Build artifact digest mismatch: $hash"}
-          Expand-Archive -LiteralPath $zip -DestinationPath "$env:RUNNER_TEMP\office" -Force
-          $exe="$env:RUNNER_TEMP\office\program\soffice.com"
-          if(!(Test-Path $exe)){throw 'Expected built console executable not found'}
-          $version=& $exe --version
-          if($LASTEXITCODE -ne 0 -or ($version -join ' ') -notmatch 'CFH Office 26\.8\.2\.2 4f58d63d6beea882e8743564f58fcdaa2c26cb81'){throw "Unexpected built version: $version"}
-          Write-Output "Built version: $version"
-      - name: Package installer
+          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13605543503/zip' -Headers $headers -OutFile $zip
+          if((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '928e1f4a7ef2d0342c506df164427b001a82c510c50ce73aedebb1d370c40523'){throw 'Installer archive digest mismatch'}
+          Expand-Archive $zip "$env:RUNNER_TEMP\package" -Force
+          $setup=Get-ChildItem "$env:RUNNER_TEMP\package\*.exe" | Select-Object -First 1
+          if((Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne '1d800989e36d817dcf6d2c94534941e72738c221a123e80d8b7f31c20ed70cf9'){throw 'Installer digest mismatch'}
+      - name: Test absent and outdated registry prerequisites
         shell: pwsh
+        timeout-minutes: 5
         run: |
-          $iscc="${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if(!(Test-Path $iscc)){throw 'Inno Setup unavailable on runner'}
-          $launcher=@'
-          using System;
-          using System.Diagnostics;
-          using System.IO;
-          using System.Windows.Forms;
-          static class CFHOfficeLauncher {
-            [STAThread] static int Main(string[] args) {
-              if(args.Length != 1 || args[0].IndexOf('"') >= 0) { MessageBox.Show("Choose one document to open.","CFH Office"); return 2; }
-              try {
-                string file=Path.GetFullPath(args[0]);
-                string ext=Path.GetExtension(file).ToLowerInvariant();
-                if(!File.Exists(file) || Array.IndexOf(new[]{".docx",".odt",".xlsx",".ods",".pptx",".odp"},ext)<0) { MessageBox.Show("Choose an existing supported document.","CFH Office"); return 2; }
-                string dir=AppDomain.CurrentDomain.BaseDirectory;
-                var info=new ProcessStartInfo(Path.Combine(dir,"soffice.exe"),"\""+file+"\"");
-                info.WorkingDirectory=dir; info.UseShellExecute=false;
-                Process.Start(info); return 0;
-              } catch(Exception e) { MessageBox.Show("Could not open the document: "+e.Message,"CFH Office"); return 1; }
+          $key='HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64'
+          if(!(Test-Path $key)){throw 'Runner runtime key absent before test; no mutation attempted'}
+          $original=Get-ItemProperty $key -Name Installed,Major,Minor,Bld
+          foreach($name in @('Installed','Major','Minor','Bld')){if($null -eq $original.$name){throw "Runner registry value missing before test: $name"}}
+          if($original.Installed -ne 1 -or $original.Major -lt 14 -or ($original.Major -eq 14 -and ($original.Minor -lt 44 -or ($original.Minor -eq 44 -and $original.Bld -lt 35207)))){throw 'Runner runtime does not meet baseline prerequisite'}
+          $reg=Get-Item $key
+          foreach($name in @('Installed','Major','Minor','Bld')){if($reg.GetValueKind($name) -ne [Microsoft.Win32.RegistryValueKind]::DWord){throw "Unexpected registry type: $name"}}
+          $setup=(Get-ChildItem "$env:RUNNER_TEMP\package\*.exe" | Select-Object -First 1).FullName
+          try {
+            foreach($scenario in @('missing','outdated')){
+              if($scenario -eq 'missing'){Set-ItemProperty -Path $key -Name Installed -Type DWord -Value 0}
+              else {
+                Set-ItemProperty -Path $key -Name Installed -Type DWord -Value 1
+                Set-ItemProperty -Path $key -Name Major -Type DWord -Value 14
+                Set-ItemProperty -Path $key -Name Minor -Type DWord -Value 43
+                Set-ItemProperty -Path $key -Name Bld -Type DWord -Value 0
+              }
+              $dest="$env:RUNNER_TEMP\blocked-$scenario"
+              $before=@(Get-Process msedge,chrome,firefox -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+              $p=Start-Process $setup -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dest","/LOG=$env:RUNNER_TEMP\$scenario.log") -PassThru
+              if(!$p.WaitForExit(45000)){Stop-Process -Id $p.Id -Force; throw "$scenario silent setup hung"}
+              if($p.ExitCode -eq 0 -or (Test-Path (Join-Path $dest 'program\soffice.com'))){throw "$scenario runtime was not blocked"}
+              Write-Output "RUNTIME $scenario blocked with exit $($p.ExitCode)"
+              if(!(Test-Path "$env:RUNNER_TEMP\$scenario.log") -or !((Get-Content "$env:RUNNER_TEMP\$scenario.log" -Raw) -match 'Missing or outdated Microsoft Visual C\+\+ x64 runtime')){throw "$scenario did not report prerequisite cause"}
+              $after=@(Get-Process msedge,chrome,firefox -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+              if(@($after | Where-Object {$_ -notin $before}).Count -gt 0){throw "$scenario launched a browser in silent mode"}
             }
+          } finally {
+            foreach($name in @('Installed','Major','Minor','Bld')){Set-ItemProperty -Path $key -Name $name -Type DWord -Value $original.$name}
+            $restored=Get-ItemProperty $key -Name Installed,Major,Minor,Bld
+            foreach($name in @('Installed','Major','Minor','Bld')){if($restored.$name -ne $original.$name){throw "Runtime registry restoration failed: $name"}}
+            Write-Output 'Disposable runner runtime registry restored'
           }
-          '@
-          [IO.File]::WriteAllText("$env:RUNNER_TEMP\CFHOfficeLauncher.cs",$launcher,[Text.Encoding]::UTF8)
-          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x64 /reference:System.Windows.Forms.dll "/out:$env:RUNNER_TEMP\CFHOffice.exe" "$env:RUNNER_TEMP\CFHOfficeLauncher.cs"
-          if($LASTEXITCODE -ne 0){throw 'CFH launcher compile failed'}
-          $recipe=@'
-          #define AppName "CFH Office"
-          [Setup]
-          AppId={{B94D8A10-7932-4DE1-8C83-583AD60C2B88}
-          AppName={#AppName}
-          AppVersion=26.8.2.2
-          AppPublisher=Coders for Humanity
-          DefaultDirName={localappdata}\Programs\CFH Office
-          PrivilegesRequired=lowest
-          DefaultGroupName=CFH Office
-          ArchitecturesAllowed=x64compatible
-          ArchitecturesInstallIn64BitMode=x64compatible
-          Compression=lzma2/fast
-          SolidCompression=yes
-          ChangesAssociations=yes
-          OutputDir=OUTPUT_DIR
-          OutputBaseFilename=CFH-Office-26.8.2.2-setup
-          UninstallDisplayIcon={app}\program\soffice.exe
-          [Files]
-          Source: "SOURCE_DIR\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-          Source: "LAUNCHER_PATH"; DestDir: "{app}\program"; Flags: ignoreversion
-          [Icons]
-          Name: "{autoprograms}\CFH Office"; Filename: "{app}\program\soffice.exe"
-          [Tasks]
-          Name: associations; Description: "Add CFH Office to Open with for common document formats"; Flags: unchecked
-          [Registry]
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "CFH Office"; Flags: uninsdeletekey; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\shell\open\command"; ValueType: string; ValueData: """{app}\program\CFHOffice.exe"" ""%1"""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".docx"; ValueData: ""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".odt"; ValueData: ""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".xlsx"; ValueData: ""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".ods"; ValueData: ""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".pptx"; ValueData: ""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".odp"; ValueData: ""; Tasks: associations
-          [Code]
-          function InitializeSetup(): Boolean;
-          var Installed, Major, Minor, Build: Cardinal;
-              ErrorCode: Integer;
-          begin
-            Installed := 0; Major := 0; Minor := 0; Build := 0;
-            Result := RegQueryDWordValue(HKLM64, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Installed', Installed) and (Installed = 1) and
-              RegQueryDWordValue(HKLM64, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Major', Major) and
-              RegQueryDWordValue(HKLM64, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Minor', Minor) and
-              RegQueryDWordValue(HKLM64, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Bld', Build) and
-              ((Major > 14) or ((Major = 14) and ((Minor > 44) or ((Minor = 44) and (Build >= 35207)))));
-            if not Result then begin
-              Log('Missing or outdated Microsoft Visual C++ x64 runtime; see https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist');
-              if not WizardSilent then begin
-                if MsgBox('CFH Office needs the Microsoft Visual C++ x64 runtime version 14.44.35207 or newer. Open Microsoft''s download page?', mbConfirmation, MB_YESNO) = IDYES then
-                  ShellExec('open', 'https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
-              end;
-            end;
-          end;
-          function PrepareToInstall(var NeedsRestart: Boolean): String;
-          begin
-            Result := '';
-            if IsTaskSelected('associations') and
-               (RegKeyExists(HKCU, 'Software\Classes\Applications\CFHOffice.exe') or
-                RegKeyExists(HKLM, 'Software\Classes\Applications\CFHOffice.exe')) then
-              Result := 'An existing CFH Office file-handler registration was found. Clear it or install without the Open with option.';
-          end;
-          '@
-          $recipe=$recipe.Replace('SOURCE_DIR',"$env:RUNNER_TEMP\office").Replace('OUTPUT_DIR',"$env:RUNNER_TEMP\out").Replace('LAUNCHER_PATH',"$env:RUNNER_TEMP\CFHOffice.exe")
-          [IO.File]::WriteAllText("$env:RUNNER_TEMP\office.iss",$recipe,[Text.Encoding]::UTF8)
-          & $iscc "$env:RUNNER_TEMP\office.iss"
-          if($LASTEXITCODE -ne 0){throw "Installer build failed: $LASTEXITCODE"}
-          $installer=Get-Item "$env:RUNNER_TEMP\out\CFH-Office-26.8.2.2-setup.exe"
-          Write-Output "INSTALLER SHA256: $((Get-FileHash $installer -Algorithm SHA256).Hash)"
-      - name: Install and smoke test
-        shell: pwsh
-        timeout-minutes: 10
-        run: |
-          $installer="$env:RUNNER_TEMP\out\CFH-Office-26.8.2.2-setup.exe"
-          $dir="$env:RUNNER_TEMP\installed-office"
-          if(Test-Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe'){throw 'Pre-existing CFH application registration'}
-          $collision='HKCU:\Software\Classes\Applications\CFHOffice.exe'
-          New-Item -Path $collision -Force | Out-Null
-          New-ItemProperty -Path $collision -Name 'CFHProbeSentinel' -Value 'preserve' | Out-Null
-          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=associations',"/DIR=$dir") -Wait -PassThru
-          if($p.ExitCode -eq 0 -or (Get-ItemProperty -Path $collision -Name 'CFHProbeSentinel').CFHProbeSentinel -ne 'preserve'){throw 'Collision did not fail closed'}
-          Remove-Item -LiteralPath $collision
-          Write-Output 'Existing application registration preserved; conflicting install rejected'
-          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=',"/DIR=$dir") -Wait -PassThru
-          if($p.ExitCode -ne 0){throw "Opt-out install exit $($p.ExitCode)"}
-          if(Test-Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe'){throw 'Opt-out unexpectedly registered application'}
-          $p=Start-Process (Join-Path $dir 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
-          if($p.ExitCode -ne 0){throw "Opt-out uninstall exit $($p.ExitCode)"}
-          Write-Output 'Opt-out install leaves Open With entries absent'
-          $defaults=@{}
-          Add-Type @'
-          using System; using System.Text; using System.Runtime.InteropServices;
-          public static class CFHAssoc {
-            [DllImport("shlwapi.dll",CharSet=CharSet.Unicode)] static extern int AssocQueryString(uint flags,uint kind,string assoc,string extra,StringBuilder output,ref uint length);
-            public static string Executable(string ext) { uint n=0; int r=AssocQueryString(0,2,ext,null,null,ref n); if(n==0)return "<unassociated>"; var s=new StringBuilder((int)n); r=AssocQueryString(0,2,ext,null,s,ref n); return r==0?s.ToString():"<unassociated>"; }
-          }
-          '@
-          $effective=@{}
-          foreach($ext in @('.docx','.odt','.xlsx','.ods','.pptx','.odp')){
-            $key="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$ext\UserChoice"
-            $defaults[$ext]=(Get-ItemProperty -LiteralPath $key -Name ProgId -ErrorAction SilentlyContinue).ProgId
-            $effective[$ext]=[CFHAssoc]::Executable($ext)
-          }
-          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=associations',"/DIR=$dir") -Wait -PassThru
-          if($p.ExitCode -ne 0){throw "Installer exit $($p.ExitCode)"}
-          $exe=Join-Path $dir 'program\soffice.com'
-          if(!(Test-Path $exe)){throw 'Installed console executable missing'}
-          $version=& $exe --version
-          if($LASTEXITCODE -ne 0 -or ($version -join ' ') -notmatch 'CFH Office 26\.8\.2\.2 4f58d63d6beea882e8743564f58fcdaa2c26cb81'){throw "Unexpected installed version: $version"}
-          Write-Output "Installed version: $version"
-          $templates=@(Get-ChildItem -LiteralPath (Join-Path $dir 'share\template') -File -Recurse -ErrorAction Stop)
-          if($templates.Count -eq 0){throw 'Installed template inventory is empty'}
-          Write-Output "Installed template files: $($templates.Count)"
-          $expected=@{'.docx'=1;'.odt'=1;'.xlsx'=1;'.ods'=1;'.pptx'=1;'.odp'=1}
-          $changed=@()
-          foreach($ext in $expected.Keys){
-            $key='HKCU:\Software\Classes\Applications\CFHOffice.exe\SupportedTypes'
-            if((Get-Item $key -ErrorAction Stop).GetValueNames() -notcontains $ext){throw "Open With registration missing: $ext"}
-            $choice="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$ext\UserChoice"
-            if((Get-ItemProperty -LiteralPath $choice -Name ProgId -ErrorAction SilentlyContinue).ProgId -ne $defaults[$ext]){throw "Default association changed: $ext"}
-            $after=[CFHAssoc]::Executable($ext)
-            Write-Output "ASSOCIATION $ext before=$($effective[$ext]) after=$after"
-            if($after -ne $effective[$ext]){$changed += $ext}
-          }
-          if($changed.Count -gt 0){throw "Effective defaults changed: $($changed -join ', ')"}
-          Write-Output 'Optional Open With registrations present; existing user defaults unchanged'
-      - name: Uninstall probe
-        shell: pwsh
-        timeout-minutes: 10
-        run: |
-          $dir="$env:RUNNER_TEMP\installed-office"
-          $uninstaller=Join-Path $dir 'unins000.exe'
-          if(!(Test-Path $uninstaller)){throw 'Uninstaller missing'}
-          $p=Start-Process $uninstaller -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
-          if($p.ExitCode -ne 0 -or (Test-Path (Join-Path $dir 'program\soffice.com'))){throw "Uninstall failed: $($p.ExitCode)"}
-          foreach($ext in @('.docx','.odt','.xlsx','.ods','.pptx','.odp')){
-            $key='HKCU:\Software\Classes\Applications\CFHOffice.exe\SupportedTypes'
-            if((Test-Path $key) -and ((Get-Item $key).GetValueNames() -contains $ext)){throw "Open With registration remains: $ext"}
-          }
-          Write-Output 'Installed executable removed by uninstaller'
-      - name: Retain experimental installer
-        if: ${{ always() }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        with:
-          name: cfh-office-installer-probe
-          path: ${{ runner.temp }}\out\CFH-Office-26.8.2.2-setup.exe
-          if-no-files-found: warn
-          retention-days: 7
