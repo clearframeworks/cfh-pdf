@@ -30,6 +30,29 @@ jobs:
         run: |
           $iscc="${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if(!(Test-Path $iscc)){throw 'Inno Setup unavailable on runner'}
+          $launcher=@'
+          using System;
+          using System.Diagnostics;
+          using System.IO;
+          using System.Windows.Forms;
+          static class CFHOfficeLauncher {
+            [STAThread] static int Main(string[] args) {
+              if(args.Length != 1 || args[0].IndexOf('"') >= 0) { MessageBox.Show("Choose one document to open.","CFH Office"); return 2; }
+              try {
+                string file=Path.GetFullPath(args[0]);
+                string ext=Path.GetExtension(file).ToLowerInvariant();
+                if(!File.Exists(file) || Array.IndexOf(new[]{".docx",".odt",".xlsx",".ods",".pptx",".odp"},ext)<0) { MessageBox.Show("Choose an existing supported document.","CFH Office"); return 2; }
+                string dir=AppDomain.CurrentDomain.BaseDirectory;
+                var info=new ProcessStartInfo(Path.Combine(dir,"soffice.exe"),"\""+file+"\"");
+                info.WorkingDirectory=dir; info.UseShellExecute=false;
+                Process.Start(info); return 0;
+              } catch(Exception e) { MessageBox.Show("Could not open the document: "+e.Message,"CFH Office"); return 1; }
+            }
+          }
+          '@
+          [IO.File]::WriteAllText("$env:RUNNER_TEMP\CFHOfficeLauncher.cs",$launcher,[Text.Encoding]::UTF8)
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /platform:x64 /reference:System.Windows.Forms.dll "/out:$env:RUNNER_TEMP\CFHOffice.exe" "$env:RUNNER_TEMP\CFHOfficeLauncher.cs"
+          if($LASTEXITCODE -ne 0){throw 'CFH launcher compile failed'}
           $recipe=@'
           #define AppName "CFH Office"
           [Setup]
@@ -50,7 +73,7 @@ jobs:
           UninstallDisplayIcon={app}\program\soffice.exe
           [Files]
           Source: "SOURCE_DIR\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-          Source: "SOURCE_DIR\program\soffice.exe"; DestDir: "{app}\program"; DestName: "CFHOffice.exe"; Flags: ignoreversion
+          Source: "LAUNCHER_PATH"; DestDir: "{app}\program"; Flags: ignoreversion
           [Icons]
           Name: "{autoprograms}\CFH Office"; Filename: "{app}\program\soffice.exe"
           [Tasks]
@@ -83,8 +106,16 @@ jobs:
               end;
             end;
           end;
+          function PrepareToInstall(var NeedsRestart: Boolean): String;
+          begin
+            Result := '';
+            if IsTaskSelected('associations') and
+               (RegKeyExists(HKCU, 'Software\Classes\Applications\CFHOffice.exe') or
+                RegKeyExists(HKLM, 'Software\Classes\Applications\CFHOffice.exe')) then
+              Result := 'An existing CFH Office file-handler registration was found. Clear it or install without the Open with option.';
+          end;
           '@
-          $recipe=$recipe.Replace('SOURCE_DIR',"$env:RUNNER_TEMP\office").Replace('OUTPUT_DIR',"$env:RUNNER_TEMP\out")
+          $recipe=$recipe.Replace('SOURCE_DIR',"$env:RUNNER_TEMP\office").Replace('OUTPUT_DIR',"$env:RUNNER_TEMP\out").Replace('LAUNCHER_PATH',"$env:RUNNER_TEMP\CFHOffice.exe")
           [IO.File]::WriteAllText("$env:RUNNER_TEMP\office.iss",$recipe,[Text.Encoding]::UTF8)
           & $iscc "$env:RUNNER_TEMP\office.iss"
           if($LASTEXITCODE -ne 0){throw "Installer build failed: $LASTEXITCODE"}
@@ -97,6 +128,13 @@ jobs:
           $installer="$env:RUNNER_TEMP\out\CFH-Office-26.8.2.2-setup.exe"
           $dir="$env:RUNNER_TEMP\installed-office"
           if(Test-Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe'){throw 'Pre-existing CFH application registration'}
+          $collision='HKCU:\Software\Classes\Applications\CFHOffice.exe'
+          New-Item -Path $collision -Force | Out-Null
+          New-ItemProperty -Path $collision -Name 'CFHProbeSentinel' -Value 'preserve' | Out-Null
+          $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=associations',"/DIR=$dir") -Wait -PassThru
+          if($p.ExitCode -eq 0 -or (Get-ItemProperty -Path $collision -Name 'CFHProbeSentinel').CFHProbeSentinel -ne 'preserve'){throw 'Collision did not fail closed'}
+          Remove-Item -LiteralPath $collision
+          Write-Output 'Existing application registration preserved; conflicting install rejected'
           $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=',"/DIR=$dir") -Wait -PassThru
           if($p.ExitCode -ne 0){throw "Opt-out install exit $($p.ExitCode)"}
           if(Test-Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe'){throw 'Opt-out unexpectedly registered application'}
