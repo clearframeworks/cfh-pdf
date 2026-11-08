@@ -16,15 +16,15 @@ jobs:
         run: |
           $zip="$env:RUNNER_TEMP\installer.zip"
           $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
-          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13605358444/zip' -Headers $headers -OutFile $zip
-          if((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'ec36a32a6e530269e58b30b58229407f3d18a5bb7625cc3dd2113fac387734b6'){throw 'Archive digest mismatch'}
+          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13605543503/zip' -Headers $headers -OutFile $zip
+          if((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '928e1f4a7ef2d0342c506df164427b001a82c510c50ce73aedebb1d370c40523'){throw 'Archive digest mismatch'}
           Expand-Archive $zip "$env:RUNNER_TEMP\package" -Force
           $setup=Get-ChildItem "$env:RUNNER_TEMP\package\*.exe" | Select-Object -First 1
-          if((Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne '7d19b02c672f1f250b1b340ab86f68122f705e493b3e4dc89d724bfb29a936d4'){throw 'Installer digest mismatch'}
+          if((Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne '1d800989e36d817dcf6d2c94534941e72738c221a123e80d8b7f31c20ed70cf9'){throw 'Installer digest mismatch'}
           $dir="$env:RUNNER_TEMP\installed-office"
           $p=Start-Process $setup.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=associations',"/DIR=$dir") -Wait -PassThru
           if($p.ExitCode -ne 0){throw "Installer exit $($p.ExitCode)"}
-      - name: Launch synthetic document in fresh profile
+      - name: Launch synthetic document with default runner profile
         shell: pwsh
         timeout-minutes: 3
         run: |
@@ -32,10 +32,22 @@ jobs:
           Add-Type -AssemblyName UIAutomationTypes
           $dir="$env:RUNNER_TEMP\installed-office"
           $exe=Join-Path $dir 'program\CFHOffice.exe'
-          $file="$env:RUNNER_TEMP\CFH UI fixture with spaces.txt"
-          [IO.File]::WriteAllText($file,'CFH synthetic GUI fixture',[Text.Encoding]::UTF8)
+          $existing=@(Get-ChildItem -LiteralPath $env:APPDATA -Directory | Where-Object { $_.Name -match '^(LibreOffice|CFH Office)$' })
+          if($existing.Count -gt 0){throw "Default Office profile already exists: $($existing.Name -join ', ')"}
+          Write-Output 'No default LibreOffice or CFH Office profile directory before launch'
+          $file="$env:RUNNER_TEMP\CFH UI fixture with spaces.docx"
+          Add-Type -AssemblyName System.IO.Compression
+          $archive=[IO.Compression.ZipFile]::Open($file,[IO.Compression.ZipArchiveMode]::Create)
+          try {
+            $parts=@{
+              '[Content_Types].xml'='<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'
+              '_rels/.rels'='<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'
+              'word/document.xml'='<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>CFH synthetic GUI fixture</w:t></w:r></w:p><w:sectPr/></w:body></w:document>'
+            }
+            foreach($name in $parts.Keys){$entry=$archive.CreateEntry($name); $writer=[IO.StreamWriter]::new($entry.Open(),[Text.UTF8Encoding]::new($false)); try {$writer.Write($parts[$name])} finally {$writer.Dispose()}}
+          } finally {$archive.Dispose()}
           $profile=([Uri]::new("$env:RUNNER_TEMP\fresh-ui-profile")).AbsoluteUri
-          $launched=Start-Process $exe -ArgumentList @("-env:UserInstallation=$profile",'--writer',"`"$file`"") -PassThru
+          $launched=Start-Process $exe -ArgumentList @("`"$file`"") -PassThru
           $root=[Windows.Automation.AutomationElement]::RootElement
           $condition=[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window)
           $found=$null
@@ -110,17 +122,14 @@ jobs:
           try { $ok=[CFHPrintSave]::PrintWindow([IntPtr]$target.Current.NativeWindowHandle,$dc,2) } finally { $g.ReleaseHdc($dc) }
           if($ok){$bmp.Save("$env:RUNNER_TEMP\post-save.png",[Drawing.Imaging.ImageFormat]::Png)}
           $g.Dispose(); $bmp.Dispose()
-          if(!$popup){throw 'Expected text-format confirmation was not observed'}
-          $confirm=$popup.Current.BoundingRectangle
-          [CFHWindow]::SetCursorPos([int]($confirm.Right-75),[int]($confirm.Bottom-34)) | Out-Null
-          [CFHWindow]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [CFHWindow]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
-          Start-Sleep -Seconds 4
-          Write-Output 'Selected observed Use Text Format confirmation'
+          if(!$popup){Write-Output 'No save confirmation observed'} else {
+          throw 'DOCX save confirmation requires inspection before interaction'
+          }
           $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
           foreach($window in $windows){Write-Output "PRE-CLOSE WINDOW: $($window.Current.Name) PID $($window.Current.ProcessId)"}
           Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
           Start-Sleep -Seconds 2
-          $saved=[IO.File]::ReadAllText($file)
+          $archive=[IO.Compression.ZipFile]::OpenRead($file); try {$entry=$archive.GetEntry('word/document.xml'); if(!$entry){throw 'DOCX document XML missing'}; $reader=[IO.StreamReader]::new($entry.Open()); try {$saved=$reader.ReadToEnd()} finally {$reader.Dispose()}} finally {$archive.Dispose()}
           if($saved -notmatch 'CFH_GUI_SAVE_SENTINEL'){
             $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
             foreach($window in $windows){Write-Output "WINDOW DIAGNOSTIC: $($window.Current.Name) PID $($window.Current.ProcessId)"}
