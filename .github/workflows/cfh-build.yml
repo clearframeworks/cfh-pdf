@@ -70,6 +70,7 @@ jobs:
           using System; using System.Runtime.InteropServices;
           public static class CFHCalcInput {
            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+           [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
            [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint dx,uint dy,uint data,UIntPtr extra);
           }
@@ -103,7 +104,7 @@ jobs:
             Start-Sleep -Seconds 3
             if($found.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'Welcome to CFH Office!'))){throw 'Welcome dialog remained'}
           }
-          [CFHCalcInput]::SetForegroundWindow([IntPtr]$found.Current.NativeWindowHandle) | Out-Null
+          $focused=[CFHCalcInput]::SetForegroundWindow([IntPtr]$found.Current.NativeWindowHandle); Write-Output "Foreground request=$focused window=$([CFHCalcInput]::GetForegroundWindow()) expected=$($found.Current.NativeWindowHandle) PID=$($found.Current.ProcessId)"
           # Ctrl+Home selects A1; entering a value avoids coordinate assumptions about grid layout.
           [Windows.Forms.SendKeys]::SendWait('^{HOME}')
           [Windows.Forms.SendKeys]::SendWait('42')
@@ -111,10 +112,11 @@ jobs:
           [Windows.Forms.SendKeys]::SendWait('^s')
           Start-Sleep -Seconds 5
           $popup=$found.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window))
-          if($popup){Write-Output "UNRESOLVED POPUP: $($popup.Current.Name) $($popup.Current.BoundingRectangle)"; throw 'Save confirmation needs inspection'}
+          if($popup){Write-Output "UNRESOLVED POPUP: $($popup.Current.Name) $($popup.Current.BoundingRectangle)"; $found.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition) | ForEach-Object { Write-Output "UI: $($_.Current.ControlType.ProgrammaticName) $($_.Current.Name) $($_.Current.BoundingRectangle)" }; throw 'Save confirmation needs inspection'}
           Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
           Start-Sleep -Seconds 2
           & $python -c 'from openpyxl import load_workbook; import sys; x=load_workbook(sys.argv[1]); print("SAVED A1:",x.active["A1"].value); assert x.active["A1"].value == 42' $file
           if($LASTEXITCODE -ne 0){throw 'Calc cell was not persisted'}
           Write-Output 'CALC GUI CELL EDIT AND SAVE VERIFIED'
+
 
