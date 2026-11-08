@@ -1,4 +1,4 @@
-name: CFH Office installer probe
+﻿name: CFH Office installer probe
 on:
   workflow_dispatch:
 permissions:
@@ -50,23 +50,20 @@ jobs:
           UninstallDisplayIcon={app}\program\soffice.exe
           [Files]
           Source: "SOURCE_DIR\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+          Source: "SOURCE_DIR\program\soffice.exe"; DestDir: "{app}\program"; DestName: "CFHOffice.exe"; Flags: ignoreversion
           [Icons]
           Name: "{autoprograms}\CFH Office"; Filename: "{app}\program\soffice.exe"
           [Tasks]
           Name: associations; Description: "Add CFH Office to Open with for common document formats"; Flags: unchecked
           [Registry]
-          Root: HKCU; Subkey: "Software\Classes\CFHOffice.Writer"; ValueType: string; ValueData: "CFH Office document"; Flags: uninsdeletekey; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\CFHOffice.Writer\shell\open\command"; ValueType: string; ValueData: """{app}\program\soffice.exe"" --writer ""%1"""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\CFHOffice.Calc"; ValueType: string; ValueData: "CFH Office spreadsheet"; Flags: uninsdeletekey; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\CFHOffice.Calc\shell\open\command"; ValueType: string; ValueData: """{app}\program\soffice.exe"" --calc ""%1"""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\CFHOffice.Impress"; ValueType: string; ValueData: "CFH Office presentation"; Flags: uninsdeletekey; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\CFHOffice.Impress\shell\open\command"; ValueType: string; ValueData: """{app}\program\soffice.exe"" --impress ""%1"""; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\.docx\OpenWithProgids"; ValueType: string; ValueName: "CFHOffice.Writer"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\.odt\OpenWithProgids"; ValueType: string; ValueName: "CFHOffice.Writer"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\.xlsx\OpenWithProgids"; ValueType: string; ValueName: "CFHOffice.Calc"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\.ods\OpenWithProgids"; ValueType: string; ValueName: "CFHOffice.Calc"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\.pptx\OpenWithProgids"; ValueType: string; ValueName: "CFHOffice.Impress"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associations
-          Root: HKCU; Subkey: "Software\Classes\.odp\OpenWithProgids"; ValueType: string; ValueName: "CFHOffice.Impress"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "CFH Office"; Flags: uninsdeletekey; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\shell\open\command"; ValueType: string; ValueData: """{app}\program\CFHOffice.exe"" ""%1"""; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".docx"; ValueData: ""; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".odt"; ValueData: ""; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".xlsx"; ValueData: ""; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".ods"; ValueData: ""; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".pptx"; ValueData: ""; Tasks: associations
+          Root: HKCU; Subkey: "Software\Classes\Applications\CFHOffice.exe\SupportedTypes"; ValueType: string; ValueName: ".odp"; ValueData: ""; Tasks: associations
           [Code]
           function InitializeSetup(): Boolean;
           var Installed, Major, Minor, Build: Cardinal;
@@ -99,10 +96,10 @@ jobs:
         run: |
           $installer="$env:RUNNER_TEMP\out\CFH-Office-26.8.2.2-setup.exe"
           $dir="$env:RUNNER_TEMP\installed-office"
-          foreach($prog in @('CFHOffice.Writer','CFHOffice.Calc','CFHOffice.Impress')){if(Test-Path "HKCU:\Software\Classes\$prog"){throw "Pre-existing test ProgID: $prog"}}
+          if(Test-Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe'){throw 'Pre-existing CFH application registration'}
           $p=Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=',"/DIR=$dir") -Wait -PassThru
           if($p.ExitCode -ne 0){throw "Opt-out install exit $($p.ExitCode)"}
-          foreach($prog in @('CFHOffice.Writer','CFHOffice.Calc','CFHOffice.Impress')){if(Test-Path "HKCU:\Software\Classes\$prog"){throw "Opt-out unexpectedly registered $prog"}}
+          if(Test-Path 'HKCU:\Software\Classes\Applications\CFHOffice.exe'){throw 'Opt-out unexpectedly registered application'}
           $p=Start-Process (Join-Path $dir 'unins000.exe') -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
           if($p.ExitCode -ne 0){throw "Opt-out uninstall exit $($p.ExitCode)"}
           Write-Output 'Opt-out install leaves Open With entries absent'
@@ -130,11 +127,11 @@ jobs:
           $templates=@(Get-ChildItem -LiteralPath (Join-Path $dir 'share\template') -File -Recurse -ErrorAction Stop)
           if($templates.Count -eq 0){throw 'Installed template inventory is empty'}
           Write-Output "Installed template files: $($templates.Count)"
-          $expected=@{'.docx'='CFHOffice.Writer';'.odt'='CFHOffice.Writer';'.xlsx'='CFHOffice.Calc';'.ods'='CFHOffice.Calc';'.pptx'='CFHOffice.Impress';'.odp'='CFHOffice.Impress'}
+          $expected=@{'.docx'=1;'.odt'=1;'.xlsx'=1;'.ods'=1;'.pptx'=1;'.odp'=1}
           $changed=@()
           foreach($ext in $expected.Keys){
-            $key="HKCU:\Software\Classes\$ext\OpenWithProgids"
-            if((Get-Item $key -ErrorAction Stop).GetValueNames() -notcontains $expected[$ext]){throw "Open With registration missing: $ext"}
+            $key='HKCU:\Software\Classes\Applications\CFHOffice.exe\SupportedTypes'
+            if((Get-Item $key -ErrorAction Stop).GetValueNames() -notcontains $ext){throw "Open With registration missing: $ext"}
             $choice="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$ext\UserChoice"
             if((Get-ItemProperty -LiteralPath $choice -Name ProgId -ErrorAction SilentlyContinue).ProgId -ne $defaults[$ext]){throw "Default association changed: $ext"}
             $after=[CFHAssoc]::Executable($ext)
@@ -153,8 +150,8 @@ jobs:
           $p=Start-Process $uninstaller -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
           if($p.ExitCode -ne 0 -or (Test-Path (Join-Path $dir 'program\soffice.com'))){throw "Uninstall failed: $($p.ExitCode)"}
           foreach($ext in @('.docx','.odt','.xlsx','.ods','.pptx','.odp')){
-            $key="HKCU:\Software\Classes\$ext\OpenWithProgids"
-            if((Test-Path $key) -and (Get-Item $key).GetValueNames().Where({$_ -like 'CFHOffice.*'})){throw "Open With registration remains: $ext"}
+            $key='HKCU:\Software\Classes\Applications\CFHOffice.exe\SupportedTypes'
+            if((Test-Path $key) -and ((Get-Item $key).GetValueNames() -contains $ext)){throw "Open With registration remains: $ext"}
           }
           Write-Output 'Installed executable removed by uninstaller'
       - name: Retain experimental installer
