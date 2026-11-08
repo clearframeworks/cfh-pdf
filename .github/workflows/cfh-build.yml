@@ -88,6 +88,18 @@ jobs:
           [Windows.Forms.SendKeys]::SendWait(' CFH_GUI_SAVE_SENTINEL')
           [Windows.Forms.SendKeys]::SendWait('^s')
           Start-Sleep -Seconds 4
+          Add-Type -AssemblyName System.Drawing
+          Add-Type @'
+          using System; using System.Runtime.InteropServices;
+          public static class CFHPrintSave { [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd, IntPtr dc, uint flags); }
+          '@
+          $all=$found.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)
+          foreach($el in $all){Write-Output "POST-SAVE UI: $($el.Current.Name) $($el.Current.ControlType.ProgrammaticName) $($el.Current.BoundingRectangle)"}
+          $rect=$found.Current.BoundingRectangle
+          $bmp=[Drawing.Bitmap]::new([int]$rect.Width,[int]$rect.Height); $g=[Drawing.Graphics]::FromImage($bmp); $dc=$g.GetHdc()
+          try { $ok=[CFHPrintSave]::PrintWindow([IntPtr]$found.Current.NativeWindowHandle,$dc,2) } finally { $g.ReleaseHdc($dc) }
+          if($ok){$bmp.Save("$env:RUNNER_TEMP\post-save.png",[Drawing.Imaging.ImageFormat]::Png)}
+          $g.Dispose(); $bmp.Dispose()
           $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
           foreach($window in $windows){Write-Output "PRE-CLOSE WINDOW: $($window.Current.Name) PID $($window.Current.ProcessId)"}
           Get-Process soffice* -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -99,3 +111,11 @@ jobs:
             throw 'Synthetic GUI edit was not saved to the original file'
           }
           Write-Output 'SYNTHETIC GUI EDIT AND SAVE VERIFIED'
+      - name: Retain synthetic save diagnostic
+        if: ${{ always() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: office-post-save-diagnostic
+          path: ${{ runner.temp }}\post-save.png
+          if-no-files-found: warn
+          retention-days: 7
