@@ -24,4 +24,23 @@ jobs:
               matches=[n for n in names if re.search(pattern,n,re.I)]
               print(title,'COUNT',len(matches))
               for n in matches[:150]: print(n)
+          out=os.path.join(os.environ['RUNNER_TEMP'],'office-program')
+          os.makedirs(out,exist_ok=True)
+          for n in names:
+              if re.fullmatch(r'program/[^/]+\.(?:dll|exe|com)',n,re.I):
+                  z.extract(n,out)
+          PY
+          python3 - <<'PY'
+          import collections, glob, os, re, subprocess
+          files=glob.glob(os.path.join(os.environ['RUNNER_TEMP'],'office-program','program','*'))
+          imports=collections.Counter()
+          failed=[]
+          for path in files:
+              p=subprocess.run(['objdump','-p',path],text=True,capture_output=True)
+              if p.returncode: failed.append(os.path.basename(path)); continue
+              for name in re.findall(r'DLL Name:\s*(\S+)',p.stdout,re.I): imports[name.lower()]+=1
+          print('IMPORT SCAN FILES',len(files),'FAILED',len(failed))
+          print('FAILED FILES',failed[:30])
+          for name,count in sorted(imports.items()):
+              if re.search(r'vcruntime|msvcp|ucrtbase|api-ms-win-crt',name): print('RUNTIME IMPORT',name,count)
           PY
