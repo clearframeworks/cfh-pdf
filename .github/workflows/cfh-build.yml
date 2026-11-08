@@ -136,12 +136,15 @@ jobs:
             Types := Key + '\SupportedTypes';
             Ext[0]:='.docx'; Ext[1]:='.odt'; Ext[2]:='.xlsx'; Ext[3]:='.ods'; Ext[4]:='.pptx'; Ext[5]:='.odp';
             for I := 0 to 5 do
-              if RegQueryStringValue(HKCU, Types, Ext[I], Value) and (Value = '') then RegDeleteValue(HKCU, Types, Ext[I]);
-            if RegQueryStringValue(HKCU, Cmd, '', Value) and (Value = '"' + ExpandConstant('{app}\program\CFHOffice.exe') + '" "%1"') then RegDeleteValue(HKCU, Cmd, '');
-            if RegQueryStringValue(HKCU, Key, 'FriendlyAppName', Value) and (Value = 'CFH Office') then RegDeleteValue(HKCU, Key, 'FriendlyAppName');
-            if RegQueryStringValue(HKCU, Key, 'CFHOwner', Value) and (Value = 'CFHOffice-4ec9d1ca') then RegDeleteValue(HKCU, Key, 'CFHOwner');
-            RegDeleteKeyIfEmpty(HKCU, Types); RegDeleteKeyIfEmpty(HKCU, Cmd);
-            RegDeleteKeyIfEmpty(HKCU, Key + '\shell\open'); RegDeleteKeyIfEmpty(HKCU, Key + '\shell'); RegDeleteKeyIfEmpty(HKCU, Key);
+              if RegQueryStringValue(HKCU, Types, Ext[I], Value) and (Value = '') then if not RegDeleteValue(HKCU, Types, Ext[I]) then RaiseException('Could not remove CFH file-type registration: ' + Ext[I]);
+            if RegQueryStringValue(HKCU, Cmd, '', Value) and (Value = '"' + ExpandConstant('{app}\program\CFHOffice.exe') + '" "%1"') then if not RegDeleteValue(HKCU, Cmd, '') then RaiseException('Could not remove CFH file-handler command');
+            if RegQueryStringValue(HKCU, Key, 'FriendlyAppName', Value) and (Value = 'CFH Office') then if not RegDeleteValue(HKCU, Key, 'FriendlyAppName') then RaiseException('Could not remove CFH application name');
+            if RegQueryStringValue(HKCU, Key, 'CFHOwner', Value) and (Value = 'CFHOffice-4ec9d1ca') then if not RegDeleteValue(HKCU, Key, 'CFHOwner') then RaiseException('Could not remove CFH ownership marker');
+            if not RegDeleteKeyIfEmpty(HKCU, Types) then Log('SupportedTypes key retained or absent');
+            if not RegDeleteKeyIfEmpty(HKCU, Cmd) then Log('Command key retained or absent');
+            if not RegDeleteKeyIfEmpty(HKCU, Key + '\shell\open') then Log('Open key retained or absent');
+            if not RegDeleteKeyIfEmpty(HKCU, Key + '\shell') then Log('Shell key retained or absent');
+            if not RegDeleteKeyIfEmpty(HKCU, Key) then Log('Application key retained or absent');
           end;
           procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
           begin
