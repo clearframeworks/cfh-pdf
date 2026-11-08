@@ -104,6 +104,21 @@ jobs:
           [IO.File]::WriteAllText("$env:RUNNER_TEMP\cfh-office-configure.sh", $script.Replace("`r`n", "`n"), [Text.Encoding]::ASCII)
           & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" "$env:RUNNER_TEMP\cfh-office-configure.sh"
           if($LASTEXITCODE -ne 0){throw "Office configure failed: $LASTEXITCODE"}
+      - name: Capture exact source transformation
+        shell: pwsh
+        run: |
+          $src="$env:RUNNER_TEMP\office-src"
+          $patch="$env:RUNNER_TEMP\cfh-office-built-source.patch"
+          git -c "safe.directory=$src" -C $src diff --binary "--output=$patch"
+          if($LASTEXITCODE -ne 0 -or !(Test-Path $patch) -or (Get-Item $patch).Length -eq 0){throw 'Source patch capture failed'}
+          Write-Output "TRANSFORM SHA256: $((Get-FileHash $patch -Algorithm SHA256).Hash)"
+      - name: Retain exact source transformation
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: cfh-office-built-source-patch
+          path: ${{ runner.temp }}\cfh-office-built-source.patch
+          if-no-files-found: error
+          retention-days: 7
       - name: Compile CFH Office candidate
         id: compile
         shell: pwsh
