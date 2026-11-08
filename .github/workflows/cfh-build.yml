@@ -16,13 +16,13 @@ jobs:
         run: |
           $zip="$env:RUNNER_TEMP\installer.zip"
           $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
-          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13604325046/zip' -Headers $headers -OutFile $zip
-          if((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5a29de99122bdd12953bf8f5d7bd4edc1fd30b6700d0dd6b45737d51102417c3'){throw 'Archive digest mismatch'}
+          Invoke-WebRequest 'https://api.github.com/repos/clearframeworks/cfh-pdf/actions/artifacts/13605358444/zip' -Headers $headers -OutFile $zip
+          if((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'ec36a32a6e530269e58b30b58229407f3d18a5bb7625cc3dd2113fac387734b6'){throw 'Archive digest mismatch'}
           Expand-Archive $zip "$env:RUNNER_TEMP\package" -Force
           $setup=Get-ChildItem "$env:RUNNER_TEMP\package\*.exe" | Select-Object -First 1
-          if((Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'd30ff05deba478b3eabcf55490df3d8abc2dbc430595dcff20b479ee71b95721'){throw 'Installer digest mismatch'}
+          if((Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne '7d19b02c672f1f250b1b340ab86f68122f705e493b3e4dc89d724bfb29a936d4'){throw 'Installer digest mismatch'}
           $dir="$env:RUNNER_TEMP\installed-office"
-          $p=Start-Process $setup.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir") -Wait -PassThru
+          $p=Start-Process $setup.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=associations',"/DIR=$dir") -Wait -PassThru
           if($p.ExitCode -ne 0){throw "Installer exit $($p.ExitCode)"}
       - name: Launch synthetic document in fresh profile
         shell: pwsh
@@ -31,8 +31,8 @@ jobs:
           Add-Type -AssemblyName UIAutomationClient
           Add-Type -AssemblyName UIAutomationTypes
           $dir="$env:RUNNER_TEMP\installed-office"
-          $exe=Join-Path $dir 'program\soffice.exe'
-          $file="$env:RUNNER_TEMP\CFH-ui-fixture.txt"
+          $exe=Join-Path $dir 'program\CFHOffice.exe'
+          $file="$env:RUNNER_TEMP\CFH UI fixture with spaces.txt"
           [IO.File]::WriteAllText($file,'CFH synthetic GUI fixture',[Text.Encoding]::UTF8)
           $profile=([Uri]::new("$env:RUNNER_TEMP\fresh-ui-profile")).AbsoluteUri
           Start-Process $exe -ArgumentList @("-env:UserInstallation=$profile",'--writer',"`"$file`"") | Out-Null
@@ -42,7 +42,7 @@ jobs:
           for($i=0;$i -lt 30;$i++){
             $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
             foreach($window in $windows){
-              if($window.Current.Name -match 'CFH-ui-fixture'){
+              if($window.Current.Name -match 'CFH UI fixture with spaces'){
                 $proc=Get-Process -Id $window.Current.ProcessId -ErrorAction SilentlyContinue
                 if($proc -and $proc.Path -and $proc.Path.StartsWith($dir,[StringComparison]::OrdinalIgnoreCase)){$found=$window; break}
               }
