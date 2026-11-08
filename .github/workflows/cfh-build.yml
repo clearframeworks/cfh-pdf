@@ -61,6 +61,20 @@ jobs:
           Start-Sleep -Seconds 20
           Start-Sleep -Seconds 20
           $pidOffice=$found.Current.ProcessId
+          Add-Type @'
+          using System; using System.Runtime.InteropServices;
+          public static class CFHClick {
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+            [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+          }
+          '@
+          [CFHClick]::SetForegroundWindow([IntPtr]$found.Current.NativeWindowHandle) | Out-Null
+          $rect=$found.Current.BoundingRectangle
+          [CFHClick]::SetCursorPos([int]($rect.Left+300),[int]($rect.Top+260)) | Out-Null
+          [CFHClick]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+          [CFHClick]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+          Start-Sleep -Seconds 2
           $focused=[Windows.Automation.AutomationElement]::FocusedElement
           Write-Output "FOCUSED: $($focused.Current.Name); TYPE: $($focused.Current.ControlType.ProgrammaticName); PID: $($focused.Current.ProcessId)"
           $windows=$root.FindAll([Windows.Automation.TreeScope]::Children,$condition)
