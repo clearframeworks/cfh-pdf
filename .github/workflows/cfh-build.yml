@@ -105,6 +105,7 @@ jobs:
           & "$env:RUNNER_TEMP\cygwin\bin\bash.exe" "$env:RUNNER_TEMP\cfh-office-configure.sh"
           if($LASTEXITCODE -ne 0){throw "Office configure failed: $LASTEXITCODE"}
       - name: Compile CFH Office candidate
+        id: compile
         shell: pwsh
         timeout-minutes: 240
         run: |
@@ -122,12 +123,16 @@ jobs:
           Write-Output 'CFH OFFICE SOURCE BUILD COMPLETED'
       - name: Verify Office build output
         shell: pwsh
+        timeout-minutes: 3
         run: |
-          $exe="$env:RUNNER_TEMP\office-src\instdir\program\soffice.exe"
-          if(!(Test-Path $exe)){throw 'Office executable missing after build'}
+          $exe="$env:RUNNER_TEMP\office-src\instdir\program\soffice.com"
+          if(!(Test-Path $exe)){throw 'Office console executable missing after build'}
           & $exe --version
-          if($LASTEXITCODE -ne 0){throw 'Office version check failed'}
+          $code=$LASTEXITCODE
+          Write-Output "Office version process exit: $code"
+          if($null -eq $code -or $code -ne 0){throw "Office version check failed: $code"}
       - name: Retain exact Office build for testing
+        if: ${{ always() && steps.compile.outcome == 'success' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: cfh-office-instdir
